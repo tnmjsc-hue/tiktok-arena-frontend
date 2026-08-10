@@ -87,6 +87,11 @@
         body.obs-mode { width: 100vw; height: 100vh; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0; gap: 0; overflow: hidden; background: #000; }
         body.obs-mode #ui-panel { display: none; }
         body.obs-mode #stage-shell { width: min(100vw, calc(100vh * 9 / 16)); height: min(100vh, calc(100vw * 16 / 9)); flex: 0 0 auto; border: 0; border-radius: 0; box-shadow: none; }
+        body.panel-hidden { display: flex; align-items: center; justify-content: center; padding: 0; gap: 0; overflow: hidden; }
+        body.panel-hidden #ui-panel { display: none; }
+        body.panel-hidden #stage-shell { width: min(100vw, calc(100vh * 9 / 16)); height: min(100vh, calc(100vw * 16 / 9)); flex: 0 0 auto; }
+        #obs-size-badge { display: none; position: fixed; top: 8px; right: 8px; z-index: 50; background: #000a; color: #9ee7ff; font: 11px monospace; padding: 4px 8px; border-radius: 6px; pointer-events: none; }
+        body.obs-mode #obs-size-badge { display: block; }
         @media (max-width: 850px) {
             body { display: flex; flex-direction: column; align-items: center; padding: 8px; gap: 10px; }
             #stage-shell { width: min(100%, calc((100svh - 16px) * 9 / 16)); flex: 0 0 auto; }
@@ -114,10 +119,14 @@
         </div>
     </div>
 
+    <div id="obs-size-badge" aria-hidden="true"></div>
+
     <div id="ui-panel">
         <h2>TikTok Arena 2D</h2>
         <button class="btn-obs" onclick="openObsWindow()">↗ Mở Cửa Sổ OBS</button>
         <div class="upload-hint">Cửa sổ chỉ hiển thị sân đấu 9:16, không có bảng điều khiển.</div>
+        <button class="btn-obs" onclick="togglePanelHidden()">👁 Capture Ngay (Ẩn Bảng Điều Khiển)</button>
+        <div class="upload-hint">Ẩn bảng điều khiển ngay tại cửa sổ này, sân đấu phóng to toàn màn hình 9:16. Bấm lại để hiện bảng.</div>
 
         <div class="form-group">
             <label>Kết nối TikTok Live:</label>
@@ -194,12 +203,53 @@
         if (OBS_MODE) {
             document.body.classList.add('obs-mode');
             document.title = 'TikTok Arena — OBS Display';
+
+            const obsTarget = { w: 540, h: 960 };
+            try {
+                const q = new URLSearchParams(window.location.search);
+                const w = parseInt(q.get('w'), 10);
+                const h = parseInt(q.get('h'), 10);
+                if (w > 200 && h > 200) {
+                    obsTarget.w = w;
+                    obsTarget.h = h;
+                }
+            } catch {}
+
+            function fitObsWindow() {
+                try {
+                    const browserChromeWidth = Math.max(0, window.outerWidth - window.innerWidth);
+                    const browserChromeHeight = Math.max(0, window.outerHeight - window.innerHeight);
+                    window.resizeTo(obsTarget.w + browserChromeWidth, obsTarget.h + browserChromeHeight);
+                } catch {}
+            }
+
+            let obsBadgeTimer = null;
+            function showObsBadge() {
+                const badge = document.getElementById('obs-size-badge');
+                if (!badge) return;
+                badge.textContent = `${window.innerWidth}×${window.innerHeight} (mục tiêu ${obsTarget.w}×${obsTarget.h})`;
+                badge.style.opacity = '1';
+                if (obsBadgeTimer) clearTimeout(obsBadgeTimer);
+                obsBadgeTimer = setTimeout(() => { badge.style.opacity = '0.15'; }, 3000);
+            }
+
             window.addEventListener('load', () => {
-                if (!window.opener) return;
-                const browserChromeWidth = Math.max(0, window.outerWidth - window.innerWidth);
-                const browserChromeHeight = Math.max(0, window.outerHeight - window.innerHeight);
-                window.resizeTo(540 + browserChromeWidth, 960 + browserChromeHeight);
+                fitObsWindow();
+                setTimeout(fitObsWindow, 700);
+                showObsBadge();
             });
+            setTimeout(fitObsWindow, 400);
+            window.addEventListener('resize', () => {
+                if (OBS_MODE) showObsBadge();
+            });
+            window.addEventListener('keydown', e => {
+                if (e.key.toLowerCase() === 's' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    fitObsWindow();
+                    showObsBadge();
+                }
+            });
+            showObsBadge();
         }
 
         function openObsWindow() {
@@ -217,6 +267,13 @@
             }
 
             obsDisplayWindow.focus();
+        }
+
+        function togglePanelHidden() {
+            document.body.classList.toggle('panel-hidden');
+            setTimeout(() => {
+                try { game.scale.refresh(); } catch {}
+            }, 60);
         }
 
         function getSavedNews() {
@@ -690,6 +747,10 @@
         };
 
         const game = new Phaser.Game(config);
+
+        window.addEventListener('resize', () => {
+            try { game.scale.refresh(); } catch {}
+        });
 
         const giftAnnouncement = document.getElementById('gift-announcement');
         let fighter1, fighter2;
