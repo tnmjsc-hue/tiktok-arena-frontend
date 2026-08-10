@@ -98,6 +98,11 @@
             #ui-panel { width: min(100%, 540px); max-height: none; overflow: visible; }
             #log-box { min-height: 180px; }
         }
+        .mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .mode-switch button { background: #2a2a35; color: #fff; font-size: 13px; }
+        .mode-switch button.active { background: #00ff88; color: #000; }
+        body.club-mode #fighter-gift-hud { display: none; }
+        body.club-mode #stage-shell { border-color: #ff4dd8; box-shadow: 0 0 35px #ff4dd833; }
     </style>
 </head>
 <body>
@@ -123,6 +128,11 @@
 
     <div id="ui-panel">
         <h2>TikTok Arena 2D</h2>
+        <div class="mode-switch">
+            <button id="mode-btn-arena" class="active" onclick="setMode('arena')">🏟 Sàn Đấu</button>
+            <button id="mode-btn-club" onclick="setMode('club')">🍸 Bar Club</button>
+        </div>
+        <div class="upload-hint">Chuyển chế độ hiển thị sân đấu / bar club. Lựa chọn được đồng bộ sang cửa sổ OBS.</div>
         <button class="btn-obs" onclick="openObsWindow()">↗ Mở Cửa Sổ OBS</button>
         <div class="upload-hint">Cửa sổ chỉ hiển thị sân đấu 9:16, không có bảng điều khiển.</div>
         <button class="btn-obs" onclick="togglePanelHidden()">👁 Capture Ngay (Ẩn Bảng Điều Khiển)</button>
@@ -752,10 +762,278 @@
             try { game.scale.refresh(); } catch {}
         });
 
+        // ==========================================
+        // CHẾ ĐỘ HIỂN THỊ: SÀN ĐẤU / BAR CLUB (demo)
+        // ==========================================
+        const MODE_KEY = 'tiktok-arena-mode';
+        let currentMode = localStorage.getItem(MODE_KEY) === 'club' ? 'club' : 'arena';
+        let clubLayer = null;
+        let clubWorldBuilt = false;
+        let clubAmbientSpawned = false;
+        let clubSpotIndex = 0;
+        let clubCharacters = [];
+        let clubDanceTimer = null;
+
+        const CLUB_PALETTE = [0xff4dd8, 0x00ff9d, 0x00cfff, 0xffd166, 0xff5c73, 0x9d6bff];
+        const CLUB_SPOTS = Object.freeze([
+            { x: 165, y: 700 }, { x: 275, y: 745 }, { x: 385, y: 705 }, { x: 150, y: 630 },
+            { x: 390, y: 620 }, { x: 230, y: 655 }, { x: 320, y: 715 }, { x: 100, y: 868 },
+            { x: 205, y: 878 }, { x: 420, y: 858 }, { x: 472, y: 705 }, { x: 335, y: 555 },
+            { x: 180, y: 555 }, { x: 60, y: 640 }, { x: 480, y: 590 }, { x: 255, y: 825 }
+        ]);
+        const CLUB_MAX_CHARACTERS = 14;
+
+        function setMode(mode) {
+            if (mode !== 'arena' && mode !== 'club') return;
+            if (mode === currentMode) return;
+            currentMode = mode;
+            try { localStorage.setItem(MODE_KEY, currentMode); } catch {}
+            applyMode();
+            log(`Đã chuyển sang chế độ: ${currentMode === 'club' ? '🍸 Bar Club' : '🏟 Sàn Đấu'}`);
+        }
+
+        function applyMode() {
+            const isClub = currentMode === 'club';
+            document.body.classList.toggle('club-mode', isClub);
+            const btnArena = document.getElementById('mode-btn-arena');
+            const btnClub = document.getElementById('mode-btn-club');
+            if (btnArena) btnArena.classList.toggle('active', !isClub);
+            if (btnClub) btnClub.classList.toggle('active', isClub);
+
+            if (!sceneRef) return;
+            if (isClub) {
+                buildClubWorld();
+                if (!clubAmbientSpawned) {
+                    clubAmbientSpawned = true;
+                    spawnAmbientClubCrowd();
+                }
+                clubLayer.setVisible(true);
+                if (arenaBackdrop) arenaBackdrop.setVisible(false);
+                if (fighter1) fighter1.setVisible(false);
+                if (fighter2) fighter2.setVisible(false);
+                ambientAudienceBySeat.forEach(sprite => sprite.setVisible(false));
+                audiences.forEach(audience => {
+                    audience.sprite.setVisible(false);
+                    audience.text.setVisible(false);
+                });
+            } else {
+                if (clubLayer) clubLayer.setVisible(false);
+                if (arenaBackdrop) arenaBackdrop.setVisible(true);
+                if (fighter1) fighter1.setVisible(true);
+                if (fighter2) fighter2.setVisible(true);
+                ambientAudienceBySeat.forEach(sprite => sprite.setVisible(true));
+                audiences.forEach(audience => {
+                    audience.sprite.setVisible(true);
+                    audience.text.setVisible(true);
+                });
+            }
+            sceneRef.cameras.main.zoomTo(1, 250);
+            try { game.scale.refresh(); } catch {}
+        }
+
+        window.addEventListener('storage', event => {
+            if (event.key !== MODE_KEY) return;
+            const next = event.newValue === 'club' ? 'club' : 'arena';
+            if (next !== currentMode) {
+                currentMode = next;
+                applyMode();
+            }
+        });
+
+        // ---------- WORLD: BAR CLUB (demo) ----------
+        function buildClubWorld() {
+            if (!sceneRef || clubWorldBuilt) return;
+            clubWorldBuilt = true;
+            const scene = sceneRef;
+
+            clubLayer = scene.add.container(0, 0).setDepth(30);
+
+            const g = scene.add.graphics();
+            // Tường + trần
+            g.fillStyle(0x0b0710, 1);
+            g.fillRect(0, 0, 540, 300);
+            // Dải đèn neon
+            for (let i = 0; i < 12; i++) {
+                g.fillStyle(CLUB_PALETTE[i % CLUB_PALETTE.length], 0.9);
+                g.fillRect(22 + i * 44, 24, 26, 8);
+            }
+            // Sàn
+            g.fillStyle(0x120c1a, 1);
+            g.fillRect(0, 300, 540, 660);
+            // Sàn nhảy
+            g.fillStyle(0x1c1230, 1);
+            g.fillRoundedRect(112, 430, 320, 330, 18);
+            g.lineStyle(4, 0xff4dd8, 0.8);
+            g.strokeRoundedRect(112, 430, 320, 330, 18);
+            for (let r = 0; r < 5; r++) {
+                for (let c = 0; c < 5; c++) {
+                    g.fillStyle(CLUB_PALETTE[(r * 5 + c) % CLUB_PALETTE.length], 0.26);
+                    g.fillRect(130 + c * 56, 448 + r * 56, 34, 34);
+                }
+            }
+            // Quầy bar (dưới-trái)
+            g.fillStyle(0x241631, 1);
+            g.fillRoundedRect(20, 820, 260, 72, 14);
+            g.lineStyle(4, 0x00ff9d, 0.75);
+            g.strokeRoundedRect(20, 820, 260, 72, 14);
+            g.fillStyle(0x3a2150, 1);
+            g.fillRoundedRect(34, 834, 52, 26, 8);
+            g.fillRoundedRect(96, 834, 52, 26, 8);
+            g.fillRoundedRect(158, 834, 52, 26, 8);
+            g.fillRoundedRect(220, 834, 46, 26, 8);
+            // Booth DJ (trên-trái)
+            g.fillStyle(0x1d1233, 1);
+            g.fillRoundedRect(28, 118, 150, 88, 12);
+            g.lineStyle(3, 0x00cfff, 0.8);
+            g.strokeRoundedRect(28, 118, 150, 88, 12);
+            g.fillStyle(0x0e0a16, 1);
+            g.fillCircle(96, 152, 22);
+            g.fillCircle(134, 152, 22);
+            g.fillStyle(0x0e0a16, 1);
+            g.fillRoundedRect(48, 176, 110, 16, 6);
+            // Bàn ghế bên phải
+            g.fillStyle(0x241631, 1);
+            g.fillRoundedRect(400, 200, 112, 70, 10);
+            g.lineStyle(3, 0xffd166, 0.75);
+            g.strokeRoundedRect(400, 200, 112, 70, 10);
+            g.fillRoundedRect(400, 300, 112, 70, 10);
+            g.lineStyle(3, 0xff5c73, 0.75);
+            g.strokeRoundedRect(400, 300, 112, 70, 10);
+            clubLayer.add(g);
+
+            const signGlow = scene.add.text(270, 84, '🍸 CLUB LIVE', {
+                fontSize: '42px', fontStyle: 'bold', color: '#ff4dd8'
+            }).setOrigin(0.5).setAlpha(0.35);
+            const sign = scene.add.text(270, 84, '🍸 CLUB LIVE', {
+                fontSize: '40px', fontStyle: 'bold', color: '#ffd1f1'
+            }).setOrigin(0.5);
+            clubLayer.add([signGlow, sign]);
+        }
+
+        function createClubCharacter(x, y, user, opts = {}) {
+            const scene = sceneRef;
+            const shirt = opts.shirt ?? CLUB_PALETTE[Phaser.Math.Between(0, CLUB_PALETTE.length - 1)];
+            const skin = 0xffd9a0;
+
+            const root = scene.add.container(x, y).setDepth(38);
+            const legL = scene.add.rectangle(-8, -2, 12, 40, 0x222240).setOrigin(0.5, 1);
+            const legR = scene.add.rectangle(8, -2, 12, 40, 0x222240).setOrigin(0.5, 1);
+            const torso = scene.add.rectangle(0, -48, 34, 46, shirt).setOrigin(0.5, 0);
+            const armL = scene.add.rectangle(-24, -42, 11, 34, 0x1a1a33).setOrigin(0.5, 0);
+            const armR = scene.add.rectangle(24, -42, 11, 34, 0x1a1a33).setOrigin(0.5, 0);
+            const head = scene.add.circle(0, -82, 17, skin).setStrokeStyle(2, 0x00000088);
+            const eyeL = scene.add.circle(-6, -84, 2.5, 0x141420);
+            const eyeR = scene.add.circle(6, -84, 2.5, 0x141420);
+            const nameText = scene.add.text(0, -114, user || 'Khán giả', {
+                fontSize: '10px', fill: '#ffffff', fontStyle: 'bold',
+                backgroundColor: '#00000088', padding: { x: 3, y: 1 }
+            }).setOrigin(0.5).setScale(0.9);
+
+            root.add([legL, legR, torso, armL, armR, head, eyeL, eyeR, nameText]);
+
+            const character = {
+                root, armL, armR, head, nameText,
+                user: String(user || '').trim(),
+                spot: { x, y },
+                shirt
+            };
+            clubCharacters.push(character);
+            return character;
+        }
+
+        function startClubBob(character) {
+            const { root, spot } = character;
+            sceneRef.tweens.add({
+                targets: root,
+                y: spot.y - 5,
+                duration: Phaser.Math.Between(700, 1100),
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+        }
+
+        function spawnAmbientClubCrowd() {
+            const names = ['DJ Nắng', 'Chị Hằng', 'Bờm', 'Mít', 'Khoai', 'Xoài', 'Ú', 'Gấu'];
+            names.forEach((name, i) => {
+                const spot = CLUB_SPOTS[i % CLUB_SPOTS.length];
+                const character = createClubCharacter(spot.x, spot.y, name, {
+                    shirt: CLUB_PALETTE[i % CLUB_PALETTE.length]
+                });
+                startClubBob(character);
+            });
+            clubDanceTimer = sceneRef.time.addEvent({
+                delay: 320,
+                loop: true,
+                callback: () => {
+                    if (currentMode !== 'club' || !clubCharacters.length) return;
+                    const c = Phaser.Math.RND.pick(clubCharacters);
+                    sceneRef.tweens.add({
+                        targets: c.armL, angle: Phaser.Math.Between(-70, 70),
+                        duration: 160, yoyo: true, ease: 'Sine.easeInOut'
+                    });
+                    sceneRef.tweens.add({
+                        targets: c.armR, angle: Phaser.Math.Between(-70, 70),
+                        duration: 160, yoyo: true, ease: 'Sine.easeInOut'
+                    });
+                }
+            });
+        }
+
+        function clubSpawnViewer(user) {
+            if (!sceneRef || currentMode !== 'club') return;
+            while (clubCharacters.length >= CLUB_MAX_CHARACTERS) {
+                const oldest = clubCharacters.shift();
+                sceneRef.tweens.killTweensOf(oldest.root);
+                oldest.root.destroy();
+            }
+            const spot = CLUB_SPOTS[clubSpotIndex % CLUB_SPOTS.length];
+            clubSpotIndex += 1;
+            const character = createClubCharacter(-40, spot.y, user);
+            sceneRef.tweens.add({
+                targets: character.root,
+                x: spot.x,
+                duration: 800,
+                ease: 'Cubic.easeOut',
+                onComplete: () => startClubBob(character)
+            });
+        }
+
+        function clubReactComment(user, comment) {
+            if (!sceneRef || currentMode !== 'club' || !clubCharacters.length) return;
+            const target = Phaser.Math.RND.pick(clubCharacters);
+            sceneRef.tweens.add({
+                targets: target.head, y: target.head.y - 9,
+                duration: 180, yoyo: true, ease: 'Quad.easeInOut'
+            });
+            sceneRef.tweens.add({
+                targets: target.root, angle: Phaser.Math.Between(-14, 14),
+                duration: 170, yoyo: true
+            });
+        }
+
+        function clubReactGift(user, giftName) {
+            if (!sceneRef || currentMode !== 'club') return;
+            let target = clubCharacters.find(c => c.user === String(user || '').trim())
+                || Phaser.Math.RND.pick(clubCharacters);
+            if (!target) return;
+            showNewsAlert('QUÀ TẶNG TRỰC TIẾP', `🎁 ${user} tặng ${giftName || 'món quà'}!`, 2600, 2);
+            const { root, armL, armR } = target;
+            sceneRef.tweens.add({ targets: root, angle: 360, duration: 500, ease: 'Quad.easeIn' });
+            sceneRef.tweens.add({ targets: root, y: root.y - 26, duration: 200, yoyo: true, ease: 'Back.easeOut' });
+            sceneRef.tweens.add({ targets: [armL, armR], angle: 180, duration: 250, yoyo: true });
+            sceneRef.cameras.main.flash(200, 255, 230, 130);
+            sceneRef.cameras.main.zoomTo(1.25, 320, 'Sine.easeInOut');
+            sceneRef.time.delayedCall(1000, () => {
+                if (currentMode === 'club') sceneRef.cameras.main.zoomTo(1, 500, 'Sine.easeInOut');
+            });
+        }
+
         const giftAnnouncement = document.getElementById('gift-announcement');
         let fighter1, fighter2;
         let audiences = [];
         let sceneRef;
+        let arenaBackdrop;
         let giftEffectTimer = null;
         let giftCleanupTimer = null;
         let focusedGiftAudience = null;
@@ -811,7 +1089,7 @@
             sceneRef = this;
 
             // Góc nhìn từ ghế khán giả: võ đài boxing và toàn bộ khán phòng 9:16.
-            this.add.image(270, 480, 'arena_first_person').setDisplaySize(540, 960).setDepth(0);
+            arenaBackdrop = this.add.image(270, 480, 'arena_first_person').setDisplaySize(540, 960).setDepth(0);
             createAmbientAudience();
 
             // Hai Võ sĩ
@@ -827,6 +1105,7 @@
             log("Game đã sẵn sàng!");
             scheduleSparring(900);
             restoreCustomFighterAtlases();
+            applyMode();
         }
 
         function update() {}
@@ -1182,19 +1461,25 @@
             log(`${data.type} - ${data.action || ''} (${data.user || ''})`);
             if (!sceneRef) return;
 
-            // 1. TẠO KHÁN GIẢ MỚI
+            // 1. BÌNH LUẬN / KHÁN GIẢ MỚI
             if (data.type === 'VIEWER_COMMENT') {
                 showViewerComment(data.user, data.comment);
+                if (currentMode === 'club') clubReactComment(data.user, data.comment);
             } else if (data.type === 'SPAWN_AUDIENCE') {
-                addAudience(data.user);
+                if (currentMode === 'club') {
+                    clubSpawnViewer(data.user);
+                } else {
+                    addAudience(data.user);
+                }
                 showJoinMessage(data.user);
             }
             // 2. ACTION/COMMENT KẾT LIỄU
             else if (data.type === 'FINISHER' || data.type === 'ATTACK') {
-                runFinisher(data.side || 'blue', data.action || 'punch', data.user);
+                if (currentMode === 'arena') runFinisher(data.side || 'blue', data.action || 'punch', data.user);
             }
             // 3. PHÒNG THỦ
             else if (data.type === 'DEFENSE') {
+                if (currentMode !== 'arena') return;
                 if (data.action === 'block') {
                     playPose(fighter2, 'block', 1000);
                 } else if (data.action === 'dodge') {
@@ -1204,25 +1489,34 @@
             }
             // 4. PHẢN ỨNG TRÚNG ĐÒN
             else if (data.type === 'REACTION') {
-                runFinisher(data.side || 'blue', 'punch', data.user);
+                if (currentMode === 'arena') runFinisher(data.side || 'blue', 'punch', data.user);
             }
-            // 3. CAMERA
+            // 5. CAMERA
             else if (data.type === 'CAMERA') {
-                if (data.action === 'zoom_in') {
+                if (currentMode === 'arena' && data.action === 'zoom_in') {
                     sceneRef.cameras.main.zoomTo(1.4, 400);
                     setTimeout(() => sceneRef.cameras.main.zoomTo(1.0, 400), 1800);
                 }
             }
             // Tương thích sự kiện cũ: hiệu ứng quà lớn chạy sau GIFT_RECEIVED.
             else if (data.type === 'ULTIMATE') {
-                log('Đã nhận tín hiệu quà lớn, chờ banner quà hoàn tất...');
+                if (currentMode === 'club') {
+                    clubReactGift(data.user || 'Khán giả', data.giftName || 'Quà lớn');
+                } else {
+                    log('Đã nhận tín hiệu quà lớn, chờ banner quà hoàn tất...');
+                }
             }
-            // 5. NGƯỜI XEM TẶNG QUÀ
+            // 6. NGƯỜI XEM TẶNG QUÀ
             else if (data.type === 'GIFT_RECEIVED') {
-                showGiftEffect(data);
+                if (currentMode === 'club') {
+                    clubReactGift(data.user || 'Khán giả', data.giftName);
+                } else {
+                    showGiftEffect(data);
+                }
             }
-            // 6. THẢ TIM
+            // 7. THẢ TIM
             else if (data.type === 'ENVIRONMENT') {
+                if (currentMode !== 'arena') return;
                 sceneRef.cameras.main.setBackgroundColor('#2a1a34');
                 setTimeout(() => sceneRef.cameras.main.setBackgroundColor('#1a1a24'), 150);
             }
