@@ -26,6 +26,8 @@
         .btn-test { background: #3a3a4a; color: #fff; }
         .btn-test:hover { background: #5a5a6a; }
         .btn-test:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-obs { background: linear-gradient(135deg, #00ff88, #00cfff); color: #03110c; }
+        .btn-obs:hover { background: linear-gradient(135deg, #36ffa3, #43dcff); }
         #status-box { padding: 8px; background: #2a2a35; border-radius: 6px; font-size: 12px; border-left: 4px solid #ff4444; }
         .status-online { border-left-color: #00ff88 !important; }
         #log-box { flex: 1 0 150px; min-height: 150px; background: #0d0d11; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; overflow-y: auto; color: #00ff88; }
@@ -34,6 +36,9 @@
         .upload-control strong { font-size: 12px; color: #fff; }
         .upload-control input { width: 100%; padding: 6px; font-size: 10px; }
         .upload-hint { color: #8f9bad; font-size: 10px; line-height: 1.4; }
+        body.obs-mode { width: 100vw; height: 100vh; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0; gap: 0; overflow: hidden; background: #000; }
+        body.obs-mode #ui-panel { display: none; }
+        body.obs-mode #stage-shell { width: min(100vw, calc(100vh * 9 / 16)); height: min(100vh, calc(100vw * 16 / 9)); flex: 0 0 auto; border: 0; border-radius: 0; box-shadow: none; }
         @media (max-width: 850px) {
             body { display: flex; flex-direction: column; align-items: center; padding: 8px; gap: 10px; }
             #stage-shell { width: min(100%, calc((100svh - 16px) * 9 / 16)); flex: 0 0 auto; }
@@ -51,7 +56,9 @@
 
     <div id="ui-panel">
         <h2>TikTok Arena 2D</h2>
-        
+        <button class="btn-obs" onclick="openObsWindow()">↗ Mở Cửa Sổ OBS</button>
+        <div class="upload-hint">Cửa sổ chỉ hiển thị sân đấu 9:16, không có bảng điều khiển.</div>
+
         <div class="form-group">
             <label>Kết nối TikTok Live:</label>
             <input type="text" id="tiktok-username" placeholder="Nhập @username hoặc link vt.tiktok.com/...">
@@ -95,6 +102,36 @@
     <script>
         // THAY BẰNG LINK RENDER CỦA BẠN VÀO DÒNG DƯỚI DÂY:
         const BACKEND_URL = 'https://tiktok-arena-backend.onrender.com';
+        const OBS_MODE = new URLSearchParams(window.location.search).get('obs') === '1';
+        let obsDisplayWindow = null;
+
+        if (OBS_MODE) {
+            document.body.classList.add('obs-mode');
+            document.title = 'TikTok Arena — OBS Display';
+            window.addEventListener('load', () => {
+                if (!window.opener) return;
+                const browserChromeWidth = Math.max(0, window.outerWidth - window.innerWidth);
+                const browserChromeHeight = Math.max(0, window.outerHeight - window.innerHeight);
+                window.resizeTo(540 + browserChromeWidth, 960 + browserChromeHeight);
+            });
+        }
+
+        function openObsWindow() {
+            const obsUrl = new URL(window.location.href);
+            obsUrl.searchParams.set('obs', '1');
+            obsDisplayWindow = window.open(
+                obsUrl.toString(),
+                'tiktok-arena-obs-display',
+                'popup=yes,width=540,height=960,resizable=yes,scrollbars=no'
+            );
+
+            if (!obsDisplayWindow) {
+                alert('Trình duyệt đang chặn cửa sổ mới. Hãy cho phép pop-up rồi thử lại.');
+                return;
+            }
+
+            obsDisplayWindow.focus();
+        }
 
         const socket = io(BACKEND_URL, {
             transports: ['polling', 'websocket']
