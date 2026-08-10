@@ -23,6 +23,11 @@
         .news-ticker-label { display: flex; align-items: center; padding: 0 9px; background: #e10025; color: #fff; font-weight: 900; }
         #news-content-display { display: flex; align-items: center; min-width: 0; padding: 3px 9px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         #news-tv.news-breaking { animation: newsFlash .35s ease-out; }
+        #viewer-comment-feed { position: absolute; z-index: 26; left: 5%; right: 5%; bottom: 21%; display: flex; flex-direction: column; align-items: center; gap: 5px; pointer-events: none; }
+        .viewer-comment { max-width: 92%; padding: 6px 12px; border: 1px solid #9ee7ff99; border-radius: 999px; background: #07111de8; color: #f4fbff; box-shadow: 0 4px 14px #000b; font-size: clamp(8px, 1.8vw, 14px); line-height: 1.15; text-align: center; animation: commentIn .25s ease-out, commentOut .7s ease-in 3.8s forwards; }
+        .viewer-comment strong { color: #72e5ff; }
+        @keyframes commentIn { from { opacity: 0; transform: translateY(8px) scale(.92); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes commentOut { to { opacity: 0; transform: translateY(-7px) scale(.98); } }
         #fighter-gift-hud { position: absolute; z-index: 18; top: 2%; left: 2.5%; right: 2.5%; display: grid; grid-template-columns: 1fr 1fr; gap: 3%; pointer-events: none; }
         .stage-gift-board { overflow: hidden; border: 2px solid; border-radius: 9px; background: #07101dde; box-shadow: 0 5px 16px #000b; backdrop-filter: blur(3px); }
         .stage-gift-board.blue { border-color: #2598ff; }
@@ -96,6 +101,7 @@
         <div id="game-container"></div>
         <div id="gift-announcement" role="status" aria-live="polite"></div>
         <div id="fighter-gift-hud" aria-label="Quà kích hoạt động tác võ sĩ"></div>
+        <div id="viewer-comment-feed" role="log" aria-live="polite" aria-label="Bình luận người xem"></div>
         <div id="news-tv" role="status" aria-live="polite">
             <div id="news-screen">
                 <div class="news-header"><span>ARENA NEWS</span><span class="news-live">● LIVE</span></div>
@@ -233,6 +239,23 @@
             document.getElementById('news-headline-input').value = headline;
             document.getElementById('news-content-input').value = content;
             renderNews(headline, content);
+        }
+
+        function showViewerComment(user, comment) {
+            const feed = document.getElementById('viewer-comment-feed');
+            const text = String(comment || '').trim();
+            if (!feed || !text) return;
+
+            const bubble = document.createElement('div');
+            bubble.className = 'viewer-comment';
+            const author = document.createElement('strong');
+            author.textContent = `${user || 'Viewer'}: `;
+            const message = document.createElement('span');
+            message.textContent = text.slice(0, 180);
+            bubble.append(author, message);
+            feed.appendChild(bubble);
+            while (feed.children.length > 3) feed.firstElementChild.remove();
+            setTimeout(() => bubble.remove(), 4600);
         }
 
         function updateNewsFromControls() {
@@ -1099,7 +1122,9 @@
             if (!sceneRef) return;
 
             // 1. TẠO KHÁN GIẢ MỚI
-            if (data.type === 'SPAWN_AUDIENCE') {
+            if (data.type === 'VIEWER_COMMENT') {
+                showViewerComment(data.user, data.comment);
+            } else if (data.type === 'SPAWN_AUDIENCE') {
                 addAudience(data.user);
                 showJoinMessage(data.user);
             }
