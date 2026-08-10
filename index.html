@@ -12,15 +12,26 @@
         #stage-shell { position: relative; width: min(calc((100svh - 24px) * 9 / 16), calc(100vw - 356px)); aspect-ratio: 9 / 16; justify-self: center; align-self: center; overflow: hidden; border: 2px solid #00ff88; border-radius: 14px; background: #11131d; box-shadow: 0 0 35px #00ff8833; }
         #game-container { position: absolute; inset: 0; }
         #game-container canvas { width: 100% !important; height: 100% !important; display: block; }
-        #gift-announcement { position: absolute; z-index: 20; top: 4%; left: 50%; width: 88%; padding: 12px 14px; border: 2px solid #ffd447; border-radius: 12px; background: linear-gradient(135deg, #2d1300ee, #7a3300ee); color: #fff4a3; box-shadow: 0 0 24px #ffd447aa; font-size: clamp(14px, 2.2vw, 24px); font-weight: 800; text-align: center; pointer-events: none; opacity: 0; transform: translate(-50%, -12px) scale(.82); transition: opacity .25s ease, transform .25s cubic-bezier(.2, 1.4, .4, 1); }
-        #gift-announcement.gift-visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
-        #gift-announcement.gift-fading { opacity: 0; transform: translate(-50%, -18px) scale(1.03); transition-duration: .7s; }
+        #gift-announcement { display: none; }
+        #news-tv { position: absolute; z-index: 24; left: 3%; bottom: 2.2%; width: 94%; height: 18%; padding: 7px; border: 4px solid #15171d; border-radius: 12px; background: linear-gradient(#30343e, #090a0e); box-shadow: 0 8px 22px #000d, inset 0 0 0 1px #59606f; pointer-events: none; }
+        #news-screen { position: relative; width: 100%; height: 100%; overflow: hidden; border: 2px solid #73839b; border-radius: 6px; background: radial-gradient(circle at 70% 20%, #164b78, #07172b 55%, #03070f); }
+        #news-screen::before { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 28%, #ffffff0c 48%, transparent 67%); }
+        .news-header { position: relative; display: flex; align-items: center; justify-content: space-between; height: 28%; padding: 0 4%; background: linear-gradient(90deg, #d80024, #8a0018); color: #fff; font-size: clamp(8px, 1.8vw, 15px); font-weight: 900; letter-spacing: .08em; }
+        .news-live { padding: 2px 7px; border-radius: 3px; background: #fff; color: #c80020; animation: livePulse 1.2s infinite; }
+        #news-headline-display { position: relative; padding: 3% 5% 1%; color: #fff; font-size: clamp(11px, 2.6vw, 22px); font-weight: 900; line-height: 1.05; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .news-ticker { position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: auto 1fr; min-height: 30%; background: #f1f3f7; color: #09111f; font-size: clamp(8px, 1.8vw, 15px); font-weight: 700; }
+        .news-ticker-label { display: flex; align-items: center; padding: 0 9px; background: #e10025; color: #fff; font-weight: 900; }
+        #news-content-display { display: flex; align-items: center; min-width: 0; padding: 3px 9px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        #news-tv.news-breaking { animation: newsFlash .35s ease-out; }
+        @keyframes livePulse { 50% { opacity: .62; } }
+        @keyframes newsFlash { 0% { filter: brightness(2); transform: scale(.96); } 100% { filter: brightness(1); transform: scale(1); } }
         #ui-panel { width: 320px; max-height: calc(100svh - 24px); background: #1e1e24; padding: 20px; border: 1px solid #333; border-radius: 12px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
         h2 { color: #00ff88; font-size: 16px; text-transform: uppercase; }
         .form-group { display: flex; flex-direction: column; gap: 6px; }
         label { font-size: 12px; color: #aaa; }
-        input, button { padding: 10px; border-radius: 6px; border: none; font-size: 13px; }
-        input { background: #2a2a35; color: #fff; border: 1px solid #444; }
+        input, textarea, button { padding: 10px; border-radius: 6px; border: none; font: inherit; font-size: 13px; }
+        input, textarea { background: #2a2a35; color: #fff; border: 1px solid #444; }
+        textarea { min-height: 72px; resize: vertical; }
         button { background: #00ff88; color: #000; font-weight: bold; cursor: pointer; }
         button:hover { background: #00cc6a; }
         .btn-test { background: #3a3a4a; color: #fff; }
@@ -52,6 +63,16 @@
     <div id="stage-shell">
         <div id="game-container"></div>
         <div id="gift-announcement" role="status" aria-live="polite"></div>
+        <div id="news-tv" role="status" aria-live="polite">
+            <div id="news-screen">
+                <div class="news-header"><span>ARENA NEWS</span><span class="news-live">● LIVE</span></div>
+                <div id="news-headline-display"></div>
+                <div class="news-ticker">
+                    <span class="news-ticker-label">TIN MỚI</span>
+                    <span id="news-content-display"></span>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div id="ui-panel">
@@ -66,6 +87,16 @@
         </div>
 
         <div id="status-box">Trạng thái: Chưa kết nối</div>
+
+        <hr style="border-color: #333;">
+
+        <h2>Nội Dung Bản Tin TV</h2>
+        <div class="form-group">
+            <label for="news-headline-input">Tiêu đề</label>
+            <input id="news-headline-input" maxlength="48" oninput="updateNewsFromControls()">
+            <label for="news-content-input">Nội dung chạy bên dưới</label>
+            <textarea id="news-content-input" maxlength="160" oninput="updateNewsFromControls()"></textarea>
+        </div>
 
         <hr style="border-color: #333;">
 
@@ -103,7 +134,10 @@
         // THAY BẰNG LINK RENDER CỦA BẠN VÀO DÒNG DƯỚI DÂY:
         const BACKEND_URL = 'https://tiktok-arena-backend.onrender.com';
         const OBS_MODE = new URLSearchParams(window.location.search).get('obs') === '1';
+        const NEWS_CONTENT_KEY = 'tiktok-arena-news-content';
         let obsDisplayWindow = null;
+        let newsAlertTimer = null;
+        let newsAlertPriority = 0;
 
         if (OBS_MODE) {
             document.body.classList.add('obs-mode');
@@ -132,6 +166,61 @@
 
             obsDisplayWindow.focus();
         }
+
+        function getSavedNews() {
+            try {
+                return JSON.parse(localStorage.getItem(NEWS_CONTENT_KEY)) || {};
+            } catch {
+                return {};
+            }
+        }
+
+        function renderNews(headline, content) {
+            document.getElementById('news-headline-display').textContent = headline;
+            document.getElementById('news-content-display').textContent = content;
+        }
+
+        function restoreNewsDisplay() {
+            const saved = getSavedNews();
+            const headline = saved.headline || 'BẢN TIN ĐẤU TRƯỜNG';
+            const content = saved.content || 'Chào mừng bạn đến với TikTok Arena Live!';
+            document.getElementById('news-headline-input').value = headline;
+            document.getElementById('news-content-input').value = content;
+            renderNews(headline, content);
+        }
+
+        function updateNewsFromControls() {
+            if (newsAlertTimer) clearTimeout(newsAlertTimer);
+            newsAlertTimer = null;
+            newsAlertPriority = 0;
+            const headline = document.getElementById('news-headline-input').value.trim() || 'BẢN TIN ĐẤU TRƯỜNG';
+            const content = document.getElementById('news-content-input').value.trim() || 'Chào mừng bạn đến với TikTok Arena Live!';
+            localStorage.setItem(NEWS_CONTENT_KEY, JSON.stringify({ headline, content }));
+            document.getElementById('news-tv').classList.remove('news-breaking');
+            renderNews(headline, content);
+        }
+
+        function showNewsAlert(headline, content, duration = 2200, priority = 1) {
+            if (newsAlertTimer && priority < newsAlertPriority) return;
+            if (newsAlertTimer) clearTimeout(newsAlertTimer);
+            newsAlertPriority = priority;
+            const newsTv = document.getElementById('news-tv');
+            newsTv.classList.remove('news-breaking');
+            void newsTv.offsetWidth;
+            newsTv.classList.add('news-breaking');
+            renderNews(headline, content);
+            newsAlertTimer = setTimeout(() => {
+                newsAlertTimer = null;
+                newsAlertPriority = 0;
+                newsTv.classList.remove('news-breaking');
+                restoreNewsDisplay();
+            }, duration);
+        }
+
+        window.addEventListener('storage', event => {
+            if (event.key === NEWS_CONTENT_KEY && !newsAlertTimer) restoreNewsDisplay();
+        });
+        restoreNewsDisplay();
 
         const socket = io(BACKEND_URL, {
             transports: ['polling', 'websocket']
@@ -197,7 +286,7 @@
         const game = new Phaser.Game(config);
 
         const giftAnnouncement = document.getElementById('gift-announcement');
-        let fighter1, fighter2, joinText;
+        let fighter1, fighter2;
         let audiences = [];
         let sceneRef;
         let giftEffectTimer = null;
@@ -210,12 +299,11 @@
         let giftPresentationActive = false;
         let pendingFinisher = null;
         let finisherSequence = 0;
-        let joinMessageTimer = null;
         let audienceSeatCursor = 0;
         const ambientAudienceBySeat = new Map();
 
-        const FIGHTER_HOME = Object.freeze({ blue: 180, red: 360 });
-        const FIGHTER_FLOOR_Y = 690;
+        const FIGHTER_HOME = Object.freeze({ blue: 185, red: 355 });
+        const FIGHTER_FLOOR_Y = 655;
         const AUDIENCE_FACE_COUNT = 30;
         const AUDIENCE_SEATS = Object.freeze([
             ...[65, 125, 185, 245, 305, 365, 425, 485].map(x => ({ x, y: 306, scale: 0.23, depth: 3 })),
@@ -262,20 +350,12 @@
             // Hai Võ sĩ
             fighter1 = this.add.sprite(FIGHTER_HOME.blue, FIGHTER_FLOOR_Y, 'fighter_blue', FIGHTER_FRAME.idle)
                 .setOrigin(0.5, 0.88)
-                .setScale(0.58)
+                .setScale(0.62)
                 .setDepth(12);
             fighter2 = this.add.sprite(FIGHTER_HOME.red, FIGHTER_FLOOR_Y, 'fighter_red', FIGHTER_FRAME.idle)
                 .setOrigin(0.5, 0.88)
-                .setScale(0.58)
+                .setScale(0.62)
                 .setDepth(12);
-
-            joinText = this.add.text(270, 505, '', {
-                fontSize: '16px',
-                fill: '#00ff88',
-                fontWeight: 'bold',
-                backgroundColor: '#000000cc',
-                padding: { x: 10, y: 5 }
-            }).setOrigin(0.5).setAlpha(0).setDepth(30);
 
             log("Game đã sẵn sàng!");
             scheduleSparring(900);
@@ -300,34 +380,8 @@
         }
 
         function showJoinMessage(user) {
-            if (!joinText) return;
-            if (joinMessageTimer) joinMessageTimer.remove(false);
-            sceneRef.tweens.killTweensOf(joinText);
-
-            joinText
-                .setText(`${user || 'Khán giả'} VỪA VÀO XEM LIVE!`)
-                .setY(505)
-                .setAlpha(1)
-                .setScale(0.88);
-
-            sceneRef.tweens.add({
-                targets: joinText,
-                scaleX: 1,
-                scaleY: 1,
-                duration: 180,
-                ease: 'Back.easeOut'
-            });
-            joinMessageTimer = sceneRef.time.delayedCall(1600, () => {
-                sceneRef.tweens.add({
-                    targets: joinText,
-                    y: 493,
-                    alpha: 0,
-                    duration: 400,
-                    ease: 'Sine.easeIn',
-                    onComplete: () => joinText.setText('')
-                });
-                joinMessageTimer = null;
-            });
+            const viewer = user || 'Khán giả';
+            showNewsAlert('KHÁN GIẢ MỚI', `${viewer} VỪA VÀO XEM LIVE!`, 2200, 1);
         }
 
         function playPose(fighter, pose, duration = 650) {
@@ -618,10 +672,8 @@
             camera.panEffect.reset();
             camera.zoomEffect.reset();
 
-            giftAnnouncement.classList.remove('gift-visible', 'gift-fading');
-            giftAnnouncement.textContent = `🎁 ${data.user} tặng ${count}x ${giftName}! 🎁`;
-            void giftAnnouncement.offsetWidth;
-            giftAnnouncement.classList.add('gift-visible');
+            giftAnnouncement.textContent = `${data.user} tặng ${count}x ${giftName}!`;
+            showNewsAlert('QUÀ TẶNG TRỰC TIẾP', `🎁 ${data.user} tặng ${count}x ${giftName}!`, 3000, 2);
 
             audience.sprite.setTint(0xffd447);
             audience.text.setColor('#fff4a3');
@@ -631,7 +683,6 @@
             camera.zoomTo(2.2, 450, 'Sine.easeInOut');
 
             giftEffectTimer = sceneRef.time.delayedCall(2300, () => {
-                giftAnnouncement.classList.add('gift-fading');
                 camera.pan(270, 480, 700, 'Sine.easeInOut');
                 camera.zoomTo(1, 700, 'Sine.easeInOut');
                 if (audience.sprite.active) audience.sprite.setTint(audience.baseTint);
@@ -641,7 +692,6 @@
             });
 
             giftCleanupTimer = sceneRef.time.delayedCall(3000, () => {
-                giftAnnouncement.classList.remove('gift-visible', 'gift-fading');
                 giftCleanupTimer = null;
                 giftPresentationActive = false;
                 if (isLargeGift) {
