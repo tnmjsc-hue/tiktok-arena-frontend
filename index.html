@@ -58,8 +58,24 @@
     </div>
 
     <script>
-        const BACKEND_URL = 'https://tiktok-arena-backend.onrender.com';
-        const socket = io(BACKEND_URL);
+		// Thay thế đoạn kết nối Socket cũ bằng đoạn này:
+		const BACKEND_URL = 'https://tiktok-arena-backend.onrender.com';
+
+		const socket = io(BACKEND_URL, {
+			transports: ['polling', 'websocket'], // Bắt buộc cho Render/Vercel
+			reconnection: true,
+			reconnectionAttempts: 5,
+			timeout: 20000
+		});
+
+		// Thêm sự kiện lắng nghe trạng thái kết nối Server
+		socket.on('connect', () => {
+			log("Đã kết nối thành công tới Server Render!");
+		});
+
+		socket.on('connect_error', (err) => {
+			log("Lỗi kết nối Server Render: " + err.message);
+		});
 
         function log(msg) {
             const box = document.getElementById('log-box');
