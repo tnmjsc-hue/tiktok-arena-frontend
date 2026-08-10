@@ -15,7 +15,7 @@
         #gift-announcement { position: absolute; z-index: 20; top: 4%; left: 50%; width: 88%; padding: 12px 14px; border: 2px solid #ffd447; border-radius: 12px; background: linear-gradient(135deg, #2d1300ee, #7a3300ee); color: #fff4a3; box-shadow: 0 0 24px #ffd447aa; font-size: clamp(14px, 2.2vw, 24px); font-weight: 800; text-align: center; pointer-events: none; opacity: 0; transform: translate(-50%, -12px) scale(.82); transition: opacity .25s ease, transform .25s cubic-bezier(.2, 1.4, .4, 1); }
         #gift-announcement.gift-visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
         #gift-announcement.gift-fading { opacity: 0; transform: translate(-50%, -18px) scale(1.03); transition-duration: .7s; }
-        #ui-panel { width: 320px; max-height: calc(100svh - 24px); background: #1e1e24; padding: 20px; border: 1px solid #333; border-radius: 12px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+        #ui-panel { width: 320px; max-height: calc(100svh - 24px); background: #1e1e24; padding: 20px; border: 1px solid #333; border-radius: 12px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
         h2 { color: #00ff88; font-size: 16px; text-transform: uppercase; }
         .form-group { display: flex; flex-direction: column; gap: 6px; }
         label { font-size: 12px; color: #aaa; }
@@ -28,7 +28,12 @@
         .btn-test:disabled { opacity: 0.45; cursor: not-allowed; }
         #status-box { padding: 8px; background: #2a2a35; border-radius: 6px; font-size: 12px; border-left: 4px solid #ff4444; }
         .status-online { border-left-color: #00ff88 !important; }
-        #log-box { flex: 1; background: #0d0d11; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; overflow-y: auto; color: #00ff88; }
+        #log-box { flex: 1 0 150px; min-height: 150px; background: #0d0d11; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; overflow-y: auto; color: #00ff88; }
+        .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .upload-control { display: flex; flex-direction: column; gap: 5px; padding: 8px; border: 1px solid #3b4252; border-radius: 8px; background: #171820; }
+        .upload-control strong { font-size: 12px; color: #fff; }
+        .upload-control input { width: 100%; padding: 6px; font-size: 10px; }
+        .upload-hint { color: #8f9bad; font-size: 10px; line-height: 1.4; }
         @media (max-width: 850px) {
             body { display: flex; flex-direction: column; align-items: center; padding: 8px; gap: 10px; }
             #stage-shell { width: min(100%, calc((100svh - 16px) * 9 / 16)); flex: 0 0 auto; }
@@ -59,16 +64,29 @@
 
         <h2>Test Lệnh Tương Tác</h2>
         <button class="btn-test" onclick="sendTest('SPAWN_AUDIENCE', 'join')">+1 Khán giả mới vào phòng</button>
-        <button class="btn-test" onclick="sendTest('ATTACK', 'punch')">Võ sĩ 1 Đấm (!dam)</button>
-        <button class="btn-test" onclick="sendTest('ATTACK', 'kick')">Võ sĩ 1 Đá (!da)</button>
-        <button class="btn-test" onclick="sendTest('ATTACK', 'energy')">Võ sĩ 1 Chưởng (!chuong)</button>
-        <button class="btn-test" onclick="sendTest('DEFENSE', 'block')">Võ sĩ 2 Đỡ (!do)</button>
-        <button class="btn-test" onclick="sendTest('DEFENSE', 'dodge')">Võ sĩ 2 Né (!ne)</button>
-        <button class="btn-test" onclick="sendTest('REACTION', 'hit')">Võ sĩ 2 Trúng đòn (!trung)</button>
-        <button class="btn-test" onclick="sendTest('REACTION', 'knockdown')">Võ sĩ 2 Gục ngã (!nga)</button>
+        <button class="btn-test" onclick="sendTest('FINISHER', 'punch', { side: 'blue' })">Xanh hạ Đỏ bằng Đấm (!dam)</button>
+        <button class="btn-test" onclick="sendTest('FINISHER', 'kick', { side: 'blue' })">Xanh hạ Đỏ bằng Đá (!da)</button>
+        <button class="btn-test" onclick="sendTest('FINISHER', 'energy', { side: 'blue' })">Xanh hạ Đỏ bằng Chưởng (!chuong)</button>
+        <button class="btn-test" onclick="sendTest('FINISHER', 'punch', { side: 'red' })">Đỏ hạ Xanh bằng Đấm (!damdo)</button>
+        <button class="btn-test" onclick="sendTest('FINISHER', 'kick', { side: 'red' })">Đỏ hạ Xanh bằng Đá (!dado)</button>
+        <button class="btn-test" onclick="sendTest('FINISHER', 'energy', { side: 'red' })">Đỏ hạ Xanh bằng Chưởng (!chuongdo)</button>
         <button class="btn-test" onclick="sendTest('CAMERA', 'zoom_in')">Zoom Camera (!zoom)</button>
-        <button class="btn-test" onclick="sendTest('GIFT_RECEIVED', 'gift', { giftName: 'Rose', count: 1, diamondCount: 1 })">Test tặng Hoa Hồng</button>
-        <button class="btn-test" onclick="sendTest('ULTIMATE', 'strike')">Quà Khủng (Kỹ năng tối thượng)</button>
+        <button class="btn-test" onclick="sendTest('GIFT_RECEIVED', 'gift', { giftName: 'Rose', count: 1, diamondCount: 1 })">Test quà nhỏ</button>
+        <button class="btn-test" onclick="sendTest('GIFT_RECEIVED', 'gift', { giftName: 'TikTok Universe', count: 1, diamondCount: 34999, isLargeGift: true })">Test quà lớn → Đỏ tung chưởng</button>
+
+        <hr style="border-color: #333;">
+        <h2>Thay Thiết Kế Võ Sĩ</h2>
+        <div class="upload-grid">
+            <label class="upload-control">
+                <strong>Võ sĩ Xanh</strong>
+                <input type="file" accept="image/png,image/webp" onchange="replaceFighterAtlas('blue', this.files[0])">
+            </label>
+            <label class="upload-control">
+                <strong>Võ sĩ Đỏ</strong>
+                <input type="file" accept="image/png,image/webp" onchange="replaceFighterAtlas('red', this.files[0])">
+            </label>
+        </div>
+        <div class="upload-hint">Atlas phải có 4 cột × 2 hàng theo thứ tự: đứng, đấm, đá, chưởng, đỡ, trúng, né, gục. Ảnh được lưu trên thiết bị này.</div>
 
         <label>Nhật ký sự kiện:</label>
         <div id="log-box"></div>
@@ -148,6 +166,15 @@
         let giftEffectTimer = null;
         let giftCleanupTimer = null;
         let focusedGiftAudience = null;
+        let sparringTimer = null;
+        let finisherTimer = null;
+        let sparringTurn = 0;
+        let combatLocked = false;
+        let giftPresentationActive = false;
+        let pendingFinisher = null;
+
+        const FIGHTER_HOME = Object.freeze({ blue: 155, red: 385 });
+        const CUSTOM_FIGHTER_DB = 'tiktok-arena-fighter-designs';
 
         const FIGHTER_FRAME = Object.freeze({
             idle: 0,
@@ -222,6 +249,8 @@
             }).setOrigin(0.5);
 
             log("Game đã sẵn sàng!");
+            scheduleSparring(900);
+            restoreCustomFighterAtlases();
         }
 
         function update() {}
@@ -241,28 +270,122 @@
             fighterPoseTimers.set(fighter, timer);
         }
 
-        function playHitReaction(knockdown = false) {
-            playPose(fighter2, knockdown ? 'knockdown' : 'hit', knockdown ? 2200 : 700);
-            fighter2.setTint(0xffb0b0);
-            sceneRef.cameras.main.shake(knockdown ? 220 : 110, knockdown ? 0.018 : 0.009);
+        function playHitReaction(fighter, knockdown = false) {
+            playPose(fighter, knockdown ? 'knockdown' : 'hit', knockdown ? 2400 : 650);
+            fighter.setTint(0xffb0b0);
+            sceneRef.cameras.main.shake(knockdown ? 220 : 100, knockdown ? 0.018 : 0.008);
         }
 
-        function launchEnergyProjectile() {
-            const orb = sceneRef.add.circle(fighter1.x + 68, fighter1.y - 118, 17, 0x4fdcff, 0.95)
-                .setStrokeStyle(5, 0xe8ffff, 1);
+        function launchEnergyProjectile(attacker, defender, attackerSide, onImpact) {
+            const direction = attackerSide === 'blue' ? 1 : -1;
+            const color = attackerSide === 'blue' ? 0x4fdcff : 0xff5c73;
+            const orb = sceneRef.add.circle(attacker.x + (direction * 68), attacker.y - 118, 17, color, 0.95)
+                .setStrokeStyle(5, 0xffffff, 1);
             orb.setBlendMode(Phaser.BlendModes.ADD);
             sceneRef.tweens.add({
                 targets: orb,
-                x: fighter2.x - 30,
+                x: defender.x - (direction * 30),
                 scaleX: 1.7,
                 scaleY: 1.7,
                 duration: 430,
                 ease: 'Sine.easeIn',
                 onComplete: () => {
                     orb.destroy();
-                    playHitReaction(false);
+                    onImpact();
                     sceneRef.cameras.main.flash(120, 80, 210, 255);
                 }
+            });
+        }
+
+        function resetFighters() {
+            [fighter1, fighter2].forEach(fighter => {
+                const timer = fighterPoseTimers.get(fighter);
+                if (timer) timer.remove(false);
+                fighterPoseTimers.delete(fighter);
+                sceneRef.tweens.killTweensOf(fighter);
+                fighter.setFrame(FIGHTER_FRAME.idle).clearTint().setAlpha(1).setAngle(0);
+            });
+            fighter1.x = FIGHTER_HOME.blue;
+            fighter2.x = FIGHTER_HOME.red;
+        }
+
+        function scheduleSparring(delay = 900) {
+            if (!sceneRef) return;
+            if (sparringTimer) sparringTimer.remove(false);
+            sparringTimer = sceneRef.time.delayedCall(delay, runSparringExchange);
+        }
+
+        function runSparringExchange() {
+            sparringTimer = null;
+            if (combatLocked) {
+                scheduleSparring(500);
+                return;
+            }
+
+            const blueAttacks = sparringTurn % 2 === 0;
+            const attacker = blueAttacks ? fighter1 : fighter2;
+            const defender = blueAttacks ? fighter2 : fighter1;
+            const direction = blueAttacks ? 1 : -1;
+            const attackPose = Phaser.Math.RND.pick(['punch', 'kick']);
+            const defensePose = Phaser.Math.RND.pick(['block', 'dodge', 'hit']);
+            sparringTurn += 1;
+
+            actionText.setText(`${blueAttacks ? 'XANH' : 'ĐỎ'} ${attackPose === 'punch' ? 'ĐẤM' : 'ĐÁ'} • ${defensePose === 'block' ? 'ĐỠ' : defensePose === 'dodge' ? 'NÉ' : 'TRÚNG'}`);
+            playPose(attacker, attackPose, 620);
+            playPose(defender, defensePose, 620);
+            if (defensePose === 'hit') defender.setTint(0xffc2c2);
+
+            sceneRef.tweens.add({
+                targets: attacker,
+                x: attacker.x + (direction * 48),
+                duration: 190,
+                yoyo: true,
+                ease: 'Sine.easeInOut',
+                onComplete: () => scheduleSparring(Phaser.Math.Between(650, 1100))
+            });
+            if (defensePose === 'dodge') {
+                sceneRef.tweens.add({ targets: defender, x: defender.x - (direction * 30), duration: 190, yoyo: true });
+            }
+        }
+
+        function runFinisher(side = 'blue', action = 'punch', user = 'Khán giả') {
+            if (!sceneRef) return;
+            if (giftPresentationActive) {
+                pendingFinisher = { side, action, user };
+                return;
+            }
+            combatLocked = true;
+            if (sparringTimer) sparringTimer.remove(false);
+            if (finisherTimer) finisherTimer.remove(false);
+            resetFighters();
+
+            const attacker = side === 'red' ? fighter2 : fighter1;
+            const defender = side === 'red' ? fighter1 : fighter2;
+            const direction = side === 'red' ? -1 : 1;
+            const sideName = side === 'red' ? 'ĐỎ' : 'XANH';
+            const attackName = action === 'energy' ? 'TUNG CHƯỞNG' : action === 'kick' ? 'ĐÁ KẾT LIỄU' : 'ĐẤM KẾT LIỄU';
+            actionText.setText(`${user}: ${sideName} ${attackName}!`);
+            playPose(attacker, action, 1050);
+
+            const knockDown = () => playHitReaction(defender, true);
+            if (action === 'energy') {
+                sceneRef.time.delayedCall(220, () => launchEnergyProjectile(attacker, defender, side, knockDown));
+            } else {
+                sceneRef.tweens.add({
+                    targets: attacker,
+                    x: attacker.x + (direction * 72),
+                    duration: 220,
+                    yoyo: true,
+                    onYoyo: knockDown
+                });
+            }
+
+            finisherTimer = sceneRef.time.delayedCall(2850, () => {
+                resetFighters();
+                combatLocked = false;
+                finisherTimer = null;
+                actionText.setText('TIẾP TỤC GIAO ĐẤU!');
+                scheduleSparring(650);
             });
         }
 
@@ -317,6 +440,13 @@
             const camera = sceneRef.cameras.main;
             const count = Math.max(1, Number(data.count) || 1);
             const giftName = data.giftName || 'Món quà';
+            const isLargeGift = data.isLargeGift === true || Number(data.diamondCount) >= 10;
+            giftPresentationActive = true;
+
+            if (isLargeGift) {
+                combatLocked = true;
+                if (sparringTimer) sparringTimer.remove(false);
+            }
 
             if (giftEffectTimer) giftEffectTimer.remove(false);
             if (giftCleanupTimer) giftCleanupTimer.remove(false);
@@ -355,6 +485,15 @@
             giftCleanupTimer = sceneRef.time.delayedCall(3000, () => {
                 giftAnnouncement.classList.remove('gift-visible', 'gift-fading');
                 giftCleanupTimer = null;
+                giftPresentationActive = false;
+                if (isLargeGift) {
+                    pendingFinisher = null;
+                    sceneRef.time.delayedCall(120, () => runFinisher('red', 'energy', data.user || 'Quà lớn'));
+                } else if (pendingFinisher) {
+                    const queued = pendingFinisher;
+                    pendingFinisher = null;
+                    sceneRef.time.delayedCall(120, () => runFinisher(queued.side, queued.action, queued.user));
+                }
             });
         }
 
@@ -364,36 +503,12 @@
 
             // 1. TẠO KHÁN GIẢ MỚI
             if (data.type === 'SPAWN_AUDIENCE') {
-                actionText.setText(`${data.user} VỪA VÀO PHÒNG!`);
+                if (!combatLocked) actionText.setText(`${data.user} VỪA VÀO PHÒNG!`);
                 addAudience(data.user);
             }
-            // 2. TẤN CÔNG
-            else if (data.type === 'ATTACK') {
-                if (data.action === 'punch') {
-                    actionText.setText(`${data.user}: TUNG CÚ ĐẤM!`);
-                    playPose(fighter1, 'punch', 520);
-                    sceneRef.tweens.add({
-                        targets: fighter1,
-                        x: 220,
-                        duration: 150,
-                        yoyo: true,
-                        onYoyo: () => playHitReaction(false)
-                    });
-                } else if (data.action === 'kick') {
-                    actionText.setText(`${data.user}: TUNG CÚ ĐÁ!`);
-                    playPose(fighter1, 'kick', 650);
-                    sceneRef.tweens.add({
-                        targets: fighter1,
-                        x: 225,
-                        duration: 200,
-                        yoyo: true,
-                        onYoyo: () => playHitReaction(false)
-                    });
-                } else if (data.action === 'energy') {
-                    actionText.setText(`${data.user}: TUNG CHƯỞNG!`);
-                    playPose(fighter1, 'energy', 900);
-                    sceneRef.time.delayedCall(180, launchEnergyProjectile);
-                }
+            // 2. ACTION/COMMENT KẾT LIỄU
+            else if (data.type === 'FINISHER' || data.type === 'ATTACK') {
+                runFinisher(data.side || 'blue', data.action || 'punch', data.user);
             }
             // 3. PHÒNG THỦ
             else if (data.type === 'DEFENSE') {
@@ -408,9 +523,7 @@
             }
             // 4. PHẢN ỨNG TRÚNG ĐÒN
             else if (data.type === 'REACTION') {
-                const knockedDown = data.action === 'knockdown';
-                actionText.setText(`${data.user}: ${knockedDown ? 'GỤC NGÃ!' : 'TRÚNG ĐÒN!'}`);
-                playHitReaction(knockedDown);
+                runFinisher(data.side || 'blue', 'punch', data.user);
             }
             // 3. CAMERA
             else if (data.type === 'CAMERA') {
@@ -420,11 +533,9 @@
                     setTimeout(() => sceneRef.cameras.main.zoomTo(1.0, 400), 1800);
                 }
             }
-            // 4. QUÀ LỚN
+            // Tương thích sự kiện cũ: hiệu ứng quà lớn chạy sau GIFT_RECEIVED.
             else if (data.type === 'ULTIMATE') {
-                actionText.setText(`🔥 ${data.user} TẶNG QUÀ LỚN! 🔥`);
-                sceneRef.cameras.main.flash(400, 255, 255, 255);
-                sceneRef.cameras.main.shake(400, 0.03);
+                log('Đã nhận tín hiệu quà lớn, chờ banner quà hoàn tất...');
             }
             // 5. NGƯỜI XEM TẶNG QUÀ
             else if (data.type === 'GIFT_RECEIVED') {
@@ -449,6 +560,105 @@
                 log(`Lỗi kết nối TikTok Live.`);
             }
         });
+
+        function openFighterDatabase() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(CUSTOM_FIGHTER_DB, 1);
+                request.onupgradeneeded = () => {
+                    if (!request.result.objectStoreNames.contains('atlases')) {
+                        request.result.createObjectStore('atlases');
+                    }
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function saveCustomFighterAtlas(side, file) {
+            const db = await openFighterDatabase();
+            await new Promise((resolve, reject) => {
+                const transaction = db.transaction('atlases', 'readwrite');
+                transaction.objectStore('atlases').put(file, side);
+                transaction.oncomplete = resolve;
+                transaction.onerror = () => reject(transaction.error);
+            });
+            db.close();
+        }
+
+        async function getCustomFighterAtlas(side) {
+            const db = await openFighterDatabase();
+            const result = await new Promise((resolve, reject) => {
+                const request = db.transaction('atlases', 'readonly').objectStore('atlases').get(side);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+            db.close();
+            return result;
+        }
+
+        async function applyFighterAtlas(side, file, persist = true) {
+            if (!file || !sceneRef) return;
+            const bitmap = await createImageBitmap(file);
+            const width = bitmap.width;
+            const height = bitmap.height;
+            bitmap.close();
+
+            if (width % 4 !== 0 || height % 2 !== 0 || width < 512 || height < 512) {
+                throw new Error('Atlas phải chia hết cho 4 cột × 2 hàng và có kích thước tối thiểu 512×512.');
+            }
+
+            const frameWidth = width / 4;
+            const frameHeight = height / 2;
+            const frameRatio = frameWidth / frameHeight;
+            if (frameRatio < 0.55 || frameRatio > 1.05) {
+                throw new Error('Tỷ lệ mỗi ô không hợp lệ. Mẫu chuẩn là 384×512 cho mỗi pose.');
+            }
+
+            const objectUrl = URL.createObjectURL(file);
+            const textureKey = `fighter_${side}_custom_${Date.now()}`;
+            await new Promise((resolve, reject) => {
+                const onLoadError = fileData => {
+                    if (fileData && fileData.key === textureKey) {
+                        sceneRef.load.off(Phaser.Loader.Events.FILE_LOAD_ERROR, onLoadError);
+                        URL.revokeObjectURL(objectUrl);
+                        reject(new Error('Không đọc được atlas đã chọn.'));
+                    }
+                };
+                sceneRef.load.on(Phaser.Loader.Events.FILE_LOAD_ERROR, onLoadError);
+                sceneRef.load.spritesheet(textureKey, objectUrl, { frameWidth, frameHeight });
+                sceneRef.load.once(Phaser.Loader.Events.COMPLETE, () => {
+                    sceneRef.load.off(Phaser.Loader.Events.FILE_LOAD_ERROR, onLoadError);
+                    const fighter = side === 'red' ? fighter2 : fighter1;
+                    fighter.setTexture(textureKey, FIGHTER_FRAME.idle);
+                    URL.revokeObjectURL(objectUrl);
+                    resolve();
+                });
+                sceneRef.load.start();
+            });
+
+            if (persist) await saveCustomFighterAtlas(side, file);
+            log(`${persist ? 'Đã thay và lưu' : 'Đã khôi phục'} thiết kế võ sĩ ${side === 'red' ? 'Đỏ' : 'Xanh'}.`);
+        }
+
+        async function replaceFighterAtlas(side, file) {
+            try {
+                await applyFighterAtlas(side, file, true);
+            } catch (error) {
+                log(`Lỗi thay võ sĩ: ${error.message}`);
+                alert(error.message);
+            }
+        }
+
+        async function restoreCustomFighterAtlases() {
+            try {
+                for (const side of ['blue', 'red']) {
+                    const savedAtlas = await getCustomFighterAtlas(side);
+                    if (savedAtlas) await applyFighterAtlas(side, savedAtlas, false);
+                }
+            } catch (error) {
+                log(`Không khôi phục được thiết kế tùy chỉnh: ${error.message}`);
+            }
+        }
 
         function connectTikTok(savedInput = null, automatic = false) {
             if (connectRequestInFlight) return;
