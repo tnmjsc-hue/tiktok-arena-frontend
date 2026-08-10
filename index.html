@@ -60,6 +60,8 @@
         const socket = io(BACKEND_URL, {
             transports: ['polling', 'websocket']
         });
+        const LIVE_INPUT_KEY = 'tiktok-arena-live-input';
+        let connectRequestInFlight = false;
 
         function log(msg) {
             const box = document.getElementById('log-box');
@@ -69,6 +71,24 @@
 
         socket.on('connect', () => {
             log("Đã kết nối thành công tới Server Render!");
+            socket.timeout(5000).emit('GET_TIKTOK_STATUS', (err, status) => {
+                if (err || !status) return;
+
+                if (status.connected) {
+                    const statusBox = document.getElementById('status-box');
+                    statusBox.innerHTML = `Đã kết nối Live: @${status.username}`;
+                    statusBox.classList.add('status-online');
+                    return;
+                }
+
+                if (!status.connecting) {
+                    const savedInput = localStorage.getItem(LIVE_INPUT_KEY);
+                    if (savedInput) {
+                        log('Backend vừa kết nối lại, đang tự khôi phục TikTok Live...');
+                        connectTikTok(savedInput, true);
+                    }
+                }
+            });
         });
 
         const config = {
@@ -234,11 +254,16 @@
             }
         });
 
-        function connectTikTok() {
-            const username = document.getElementById('tiktok-username').value;
+        function connectTikTok(savedInput = null, automatic = false) {
+            if (connectRequestInFlight) return;
+
+            const input = document.getElementById('tiktok-username');
+            const username = (savedInput || input.value).trim();
             if (!username) return alert("Vui lòng nhập Username hoặc link TikTok Live!");
+            if (automatic) input.value = username;
 
             log(`Đang gửi yêu cầu kết nối TikTok: ${username}...`);
+            connectRequestInFlight = true;
             fetch(`${BACKEND_URL}/api/connect-tiktok`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -248,10 +273,14 @@
                 if (!response.ok) {
                     const message = data.error || 'Không thể kết nối TikTok Live';
                     log(`Lỗi: ${message}`);
-                    alert(message);
+                    if (!automatic) alert(message);
+                } else {
+                    localStorage.setItem(LIVE_INPUT_KEY, username);
                 }
             }).catch(err => {
                 log(`Lỗi gọi Backend: ${err.message}`);
+            }).finally(() => {
+                connectRequestInFlight = false;
             });
         }
 
