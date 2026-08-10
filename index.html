@@ -7,6 +7,8 @@
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.149.0/three.min.js"></script>
+    <script src="vendor/three/GLTFLoader.js"></script>
+    <script src="vendor/three/SkeletonUtils.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #08080c; color: #fff; min-height: 100svh; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; padding: 12px; overflow: auto; }
@@ -109,9 +111,11 @@
         body.club3d-mode #stage-shell { border-color: #00cfff; box-shadow: 0 0 35px #00cfff33; }
         #club3d-sign { position: absolute; z-index: 25; top: 4%; left: 50%; transform: translateX(-50%); font-size: 34px; font-weight: 900; color: #cff6ff; letter-spacing: .08em; white-space: nowrap; text-shadow: 0 0 12px #00cfff, 0 0 30px #00cfff, 0 0 60px #00cfff; display: none; pointer-events: none; }
         body.club3d-mode #club3d-sign { display: block; }
+        #controls-arena { display: block; }
         #controls-club3d { display: none; }
         body.club3d-mode #controls-club3d { display: block; }
         body.club3d-mode #controls-arena { display: none; }
+        body.club3d-mode #news-tv { display: none; }
         .check-label { display: flex; align-items: center; gap: 8px; color: #fff; font-size: 13px; cursor: pointer; }
         .check-label input { width: auto; }
         input[type="range"] { padding: 0; accent-color: #00ff88; }
@@ -848,11 +852,16 @@
             // 3D club stage
             if (isClub3D) {
                 if (!club3DBuilt && window.THREE) buildClub3DScene();
+                if (!club3DAssets && !club3DAssetsLoading) loadClub3DAssets();
                 if (club3DRenderer) {
                     club3DVisible = true;
                     resizeClub3D();
                     club3DClock.getDelta();
                     club3DRenderer.setAnimationLoop(club3DAnimate);
+                    if (!club3DDemoSpawned) {
+                        club3DDemoSpawned = true;
+                        sceneRef.time.delayedCall(600, () => club3DSpawnDemoCrowd());
+                    }
                 } else if (!window.THREE) {
                     log('Không tải được Three.js (Club 3D cần mạng để tải thư viện).');
                 }
@@ -907,6 +916,124 @@
             { x: 0, z: 1.0 }, { x: -0.6, z: -0.9 }, { x: 0.6, z: -0.9 }, { x: -2.3, z: -1.0 }
         ]);
         const CLUB3D_MAX_CHARACTERS = 14;
+
+        // ==========================================
+        // BỘ ASSET GLB — đổi file trong thư mục glb3d/ mà không cần sửa code:
+        //   glb3d/dancer.glb            -> model có rig (xương) + vật liệu gốc
+        //   glb3d/materials/...          -> file vật liệu/thao phục tạo khác biệt
+        //   glb3d/anims/*.glb            -> mỗi file chứa 1 clip nhảy (cùng tên xương)
+        // Nếu thiếu file, hệ thống tự dùng nhân vật low-poly sẵn có.
+        // ==========================================
+        const CLUB3D_ASSETS = {
+            model: 'glb3d/dancer.glb',
+            anims: [
+                'glb3d/anims/dance_house.glb',
+                'glb3d/anims/dance_pop.glb'
+            ],
+            materials: [
+                { color: 0xff4dd8, emissive: 0x662044 },
+                { color: 0x00cfff, emissive: 0x00394d },
+                { color: 0x00ff9d, emissive: 0x004d2d },
+                { color: 0xffd166, emissive: 0x5c3d00 },
+                { color: 0xff5c73, emissive: 0x66131f },
+                { color: 0x9d6bff, emissive: 0x3a1a66 },
+                { color: 0xff9a3d, emissive: 0x663000 }
+            ]
+        };
+        let club3DAssets = null;
+        let club3DAssetsLoading = false;
+        let club3DDemoSpawned = false;
+
+        function loadClub3DAssets() {
+            if (club3DAssets || club3DAssetsLoading || !window.THREE || !THREE.GLTFLoader) return;
+            club3DAssetsLoading = true;
+            const loader = new THREE.GLTFLoader();
+            const jobs = [loadClub3DGLB(loader, CLUB3D_ASSETS.model)];
+            CLUB3D_ASSETS.anims.forEach(url => jobs.push(loadClub3DGLB(loader, url)));
+            Promise.allSettled(jobs).then(results => {
+                const model = results.shift();
+                if (model.status !== 'fulfilled' || !model.value || !model.value.scene) throw new Error('model GLB không tải được');
+                club3DAssets = {
+                    modelRoot: model.value.scene,
+                    modelClips: model.value.animations || [],
+                    animClips: results
+                        .filter(r => r.status === 'fulfilled' && (r.value.animations || [])[0])
+                        .map(r => r.value.animations[0])
+                };
+                log(`Club 3D: bộ GLB sẵn sàng (${club3DAssets.animClips.length} động tác nhảy).`);
+            }).catch(err => {
+                log('Club 3D: không tải được bộ GLB, dùng nhân vật low-poly. (' + err.message + ')');
+            }).finally(() => {
+                club3DAssetsLoading = false;
+            });
+        }
+
+        function loadClub3DGLB(loader, url) {
+            return new Promise((resolve, reject) => {
+                loader.load(url, resolve, undefined, reject);
+            });
+        }
+
+        function club3DSpawnDemoCrowd() {
+            if (!club3DVisible || !club3DRenderer || club3DCharacters.length) return;
+            const names = ['Mia', 'Anna', 'Linh', 'Hana', 'Kai', 'Zoe'];
+            const waitMs = club3DAssets ? 0 : 1500;
+            sceneRef.time.delayedCall(waitMs, () => {
+                if (!club3DVisible || !club3DRenderer) return;
+                names.forEach(name => club3DSpawnViewer(name));
+            });
+        }
+
+        function pickClub3DMaterialVariant() {
+            const v = Phaser.Math.RND.pick(CLUB3D_ASSETS.materials);
+            return new THREE.MeshStandardMaterial({
+                color: v.color,
+                emissive: v.emissive,
+                emissiveIntensity: 0.35,
+                roughness: 0.6,
+                metalness: 0.15
+            });
+        }
+
+        function buildClub3DPersonFromGLB(user) {
+            if (!window.THREE || !THREE.SkeletonUtils || !club3DAssets) return null;
+            let model;
+            try {
+                model = THREE.SkeletonUtils.clone(club3DAssets.modelRoot);
+            } catch (err) {
+                return null;
+            }
+            model.traverse(obj => {
+                if (obj.isMesh) {
+                    obj.castShadow = true;
+                    try {
+                        obj.material = pickClub3DMaterialVariant();
+                    } catch {}
+                }
+            });
+            const mixedClips = club3DAssets.animClips.length ? club3DAssets.animClips : club3DAssets.modelClips;
+            const clip = mixedClips.length ? Phaser.Math.RND.pick(mixedClips) : null;
+            let mixer = new THREE.AnimationMixer(model);
+            if (!clip) {
+                try { mixer.stopAllAction(); mixer = null; } catch {}
+            } else {
+                try {
+                    const action = mixer.clipAction(clip, model);
+                    if (!action) {
+                        mixer.stopAllAction();
+                        mixer = null;
+                        return null;
+                    }
+                    action.reset().play();
+                    mixer.update(0);
+                } catch (err) {
+                    return null;
+                }
+            }
+            const scale = Phaser.Math.FloatBetween(0.92, 1.1);
+            model.scale.setScalar(scale);
+            return { group: model, model, mixer, clipName: clip ? clip.name : '', user: String(user || '').trim() };
+        }
 
         function buildClub3DScene() {
             if (!window.THREE || club3DBuilt) return;
@@ -1122,6 +1249,9 @@
             }
             bodies.instanceMatrix.needsUpdate = true;
             heads.instanceMatrix.needsUpdate = true;
+            if (bodies.instanceColor) bodies.instanceColor.needsUpdate = true;
+            bodies.frustumCulled = false;
+            heads.frustumCulled = false;
             scene.add(bodies, heads);
         }
 
@@ -1222,10 +1352,13 @@
 
             for (const c of club3DCharacters) {
                 const g = c.group;
+                const isGLB = !!c.mixer;
                 const speed = c.mode === 'dance' ? 3.2 : 0.9;
                 const s = Math.sin(club3DTime * speed + c.phase);
-                c.armLP.rotation.z = c.mode === 'dance' ? 0.5 * s + 0.35 : 0.12 * s;
-                c.armRP.rotation.z = c.mode === 'dance' ? -0.5 * s - 0.35 : -0.12 * s;
+                if (!isGLB) {
+                    c.armLP.rotation.z = c.mode === 'dance' ? 0.5 * s + 0.35 : 0.12 * s;
+                    c.armRP.rotation.z = c.mode === 'dance' ? -0.5 * s - 0.35 : -0.12 * s;
+                }
                 const bob = Math.abs(Math.sin(club3DTime * speed * 1.4 + c.phase));
                 g.position.y = c.baseY + (c.jumpY || 0) + bob * (c.mode === 'dance' ? 0.09 : 0.02);
                 g.rotation.y = c.mode === 'dance' ? Math.sin(club3DTime * 0.9 + c.phase) * 0.5 : 0;
@@ -1236,6 +1369,22 @@
                     g.position.x = c.walkFromX + (c.spot.x - c.walkFromX) * e;
                     g.position.z = c.walkFromZ + (c.spot.z - c.walkFromZ) * e;
                     if (k >= 1) c.mode = 'dance';
+                }
+
+                if (isGLB) {
+                    if (club3DTime >= c.clipTimer) {
+                        c.clipTimer = club3DTime + Phaser.Math.FloatBetween(7, 13);
+                        if (c.clipName && club3DAssets && club3DAssets.animClips.length > 1) {
+                            const others = club3DAssets.animClips.filter(a => a.name !== c.clipName);
+                            const next = Phaser.Math.RND.pick(others);
+                            if (next) {
+                                c.mixer.stopAllAction();
+                                c.mixer.clipAction(next, c.model).play();
+                                c.clipName = next.name;
+                            }
+                        }
+                    }
+                    c.mixer.update(dt);
                 }
             }
 
@@ -1356,6 +1505,12 @@
             if (!cin) return;
             const cam = club3DCamera;
 
+            if (cin.char && (!cin.char.group || club3DCharacters.indexOf(cin.char) < 0)) {
+                cin.char = null;
+                cin.rel = null;
+                if (cin.phase === 'hold') startClub3DShot(cin);
+            }
+
             if (cin.char && cin.char.group) {
                 const cp = cin.char.group.position;
                 const rel = cin.rel || [0.9, 1.4, 0.5];
@@ -1469,20 +1624,33 @@
 
         function club3DSpawnViewer(user) {
             if (!club3DVisible || !club3DRenderer) return;
+            if (!club3DAssets && !club3DAssetsLoading) loadClub3DAssets();
             while (club3DCharacters.length >= CLUB3D_MAX_CHARACTERS) {
                 const oldest = club3DCharacters.shift();
                 club3DScene.remove(oldest.group);
-                oldest.group.traverse(obj => {
-                    if (obj.material) {
-                        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-                        else obj.material.dispose();
-                    }
-                    if (obj.geometry) obj.geometry.dispose();
-                });
+                if (oldest.mixer) {
+                    oldest.mixer.stopAllAction();
+                    oldest.group.traverse(obj => {
+                        if (obj.material) {
+                            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                            else obj.material.dispose();
+                        }
+                    });
+                } else {
+                    oldest.group.traverse(obj => {
+                        if (obj.material) {
+                            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                            else obj.material.dispose();
+                        }
+                        if (obj.geometry) obj.geometry.dispose();
+                    });
+                }
             }
             const spot = CLUB3D_SPOTS[club3DSpotIndex % CLUB3D_SPOTS.length];
             club3DSpotIndex += 1;
-            const person = buildClub3DPerson();
+            const isGLB = !!club3DAssets;
+            let person = isGLB ? buildClub3DPersonFromGLB(user) : buildClub3DPerson();
+            if (isGLB && !person) person = buildClub3DPerson();
             person.group.position.set(-3, 0, spot.z);
             person.baseY = 0;
             person.jumpY = 0;
@@ -1493,6 +1661,7 @@
             person.walkProgress = 0;
             person.phase = Math.random() * Math.PI * 2;
             person.user = String(user || '').trim();
+            if (!person.clipTimer) person.clipTimer = club3DTime + Phaser.Math.FloatBetween(7, 13);
             person.group.add(makeClub3DNameSprite(user));
             club3DScene.add(person.group);
             club3DCharacters.push(person);
@@ -1501,8 +1670,14 @@
         function club3DReactComment(user, comment) {
             if (!club3DVisible || !club3DCharacters.length) return;
             const c = Phaser.Math.RND.pick(club3DCharacters);
-            addClub3DTween(c.headP.rotation, 'x', 0, -0.4, 170, true);
-            addClub3DTween(c.headP.rotation, 'x', -0.4, 0, 260, false);
+            if (c.headP) {
+                addClub3DTween(c.headP.rotation, 'x', 0, -0.4, 170, true);
+                addClub3DTween(c.headP.rotation, 'x', -0.4, 0, 260, false);
+            } else {
+                addClub3DTween(c.group.rotation, 'y', c.group.rotation.y, c.group.rotation.y + 0.35, 200, true, () => {
+                    addClub3DTween(c.group.rotation, 'y', c.group.rotation.y, c.group.rotation.y - 0.35, 260, false);
+                });
+            }
         }
 
         function club3DReactGift(user, giftName) {
