@@ -23,6 +23,17 @@
         .news-ticker-label { display: flex; align-items: center; padding: 0 9px; background: #e10025; color: #fff; font-weight: 900; }
         #news-content-display { display: flex; align-items: center; min-width: 0; padding: 3px 9px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         #news-tv.news-breaking { animation: newsFlash .35s ease-out; }
+        #fighter-gift-hud { position: absolute; z-index: 18; top: 2%; left: 2.5%; right: 2.5%; display: grid; grid-template-columns: 1fr 1fr; gap: 3%; pointer-events: none; }
+        .stage-gift-board { overflow: hidden; border: 2px solid; border-radius: 9px; background: #07101dde; box-shadow: 0 5px 16px #000b; backdrop-filter: blur(3px); }
+        .stage-gift-board.blue { border-color: #2598ff; }
+        .stage-gift-board.red { border-color: #ff3d59; }
+        .stage-gift-title { padding: 4px 6px; color: #fff; font-size: clamp(8px, 1.8vw, 14px); font-weight: 900; text-align: center; letter-spacing: .06em; }
+        .stage-gift-board.blue .stage-gift-title { background: linear-gradient(90deg, #0654a4, #168ff0); }
+        .stage-gift-board.red .stage-gift-title { background: linear-gradient(90deg, #a40725, #eb2549); }
+        .stage-gift-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 5px; min-height: 27px; padding: 3px 6px; border-top: 1px solid #ffffff1c; }
+        .stage-action-name { color: #fff; font-size: clamp(7px, 1.55vw, 12px); font-weight: 800; }
+        .stage-gift-name { min-width: 0; color: #ffe477; font-size: clamp(6px, 1.35vw, 11px); font-weight: 700; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .stage-gift-name.unset { color: #8c97a8; font-style: italic; }
         @keyframes livePulse { 50% { opacity: .62; } }
         @keyframes newsFlash { 0% { filter: brightness(2); transform: scale(.96); } 100% { filter: brightness(1); transform: scale(1); } }
         #ui-panel { width: 320px; max-height: calc(100svh - 24px); background: #1e1e24; padding: 20px; border: 1px solid #333; border-radius: 12px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
@@ -79,6 +90,7 @@
     <div id="stage-shell">
         <div id="game-container"></div>
         <div id="gift-announcement" role="status" aria-live="polite"></div>
+        <div id="fighter-gift-hud" aria-label="Quà kích hoạt động tác võ sĩ"></div>
         <div id="news-tv" role="status" aria-live="polite">
             <div id="news-screen">
                 <div class="news-header"><span>ARENA NEWS</span><span class="news-live">● LIVE</span></div>
@@ -342,6 +354,37 @@
             });
         }
 
+        function renderStageGiftBoards() {
+            const hud = document.getElementById('fighter-gift-hud');
+            hud.replaceChildren();
+            [['blue', 'VÕ SĨ XANH'], ['red', 'VÕ SĨ ĐỎ']].forEach(([side, title]) => {
+                const board = document.createElement('div');
+                board.className = `stage-gift-board ${side}`;
+                const heading = document.createElement('div');
+                heading.className = 'stage-gift-title';
+                heading.textContent = title;
+                board.appendChild(heading);
+
+                FIGHTER_COMMANDS.forEach(command => {
+                    const row = document.createElement('div');
+                    row.className = 'stage-gift-row';
+                    const action = document.createElement('span');
+                    action.className = 'stage-action-name';
+                    action.textContent = `${command.icon} ${command.label}`;
+                    const giftId = giftBindings[commandKey(side, command.action)];
+                    const gift = giftCatalog.get(giftId);
+                    const giftText = document.createElement('span');
+                    giftText.className = `stage-gift-name${gift ? '' : ' unset'}`;
+                    giftText.textContent = gift
+                        ? `${gift.name} · ${gift.diamonds.toLocaleString('vi-VN')}💎`
+                        : 'Chưa cài quà';
+                    row.append(action, giftText);
+                    board.appendChild(row);
+                });
+                hud.appendChild(board);
+            });
+        }
+
         function assignGift(side, action, giftId) {
             const key = commandKey(side, action);
             if (giftId) {
@@ -356,12 +399,36 @@
             syncGiftBindingsToBackend();
             refreshGiftSelects();
             renderGiftCatalog();
+            renderStageGiftBoards();
         }
 
         function syncGiftBindingsToBackend() {
             if (socket && socket.connected && !OBS_MODE) {
-                socket.emit('UPDATE_GIFT_BINDINGS', giftBindings);
+                socket.emit('UPDATE_GIFT_BINDINGS', {
+                    bindings: giftBindings,
+                    catalog: [...giftCatalog.values()]
+                });
             }
+        }
+
+        function applyRemoteGiftConfig(config) {
+            if (!config || typeof config !== 'object') return;
+            giftBindings = config.bindings && typeof config.bindings === 'object'
+                ? config.bindings
+                : config;
+            if (Array.isArray(config.catalog)) {
+                config.catalog.forEach(gift => {
+                    const id = normalizeGiftName(gift.name);
+                    if (id) giftCatalog.set(id, {
+                        name: String(gift.name).trim(),
+                        diamonds: Math.max(0, Number(gift.diamonds) || 0),
+                        source: gift.source || 'remote'
+                    });
+                });
+            }
+            refreshGiftSelects();
+            renderGiftCatalog();
+            renderStageGiftBoards();
         }
 
         function addCustomGift() {
@@ -379,6 +446,8 @@
             valueInput.value = '';
             refreshGiftSelects();
             renderGiftCatalog();
+            renderStageGiftBoards();
+            syncGiftBindingsToBackend();
         }
 
         function rememberGiftFromEvent(data) {
@@ -393,6 +462,8 @@
             saveGiftCatalog();
             refreshGiftSelects();
             renderGiftCatalog();
+            renderStageGiftBoards();
+            syncGiftBindingsToBackend();
         }
 
         function getGiftCommand(giftName) {
@@ -453,11 +524,13 @@
         loadGiftConfiguration();
         renderFighterCommands();
         renderGiftCatalog();
+        renderStageGiftBoards();
         window.addEventListener('storage', event => {
             if (event.key === GIFT_CATALOG_KEY || event.key === GIFT_BINDINGS_KEY) {
                 loadGiftConfiguration();
                 refreshGiftSelects();
                 renderGiftCatalog();
+                renderStageGiftBoards();
             }
         });
 
@@ -485,9 +558,7 @@
             log("Đã kết nối thành công tới Server Render!");
             setTestButtonsEnabled(true);
             if (OBS_MODE) {
-                socket.emit('GET_GIFT_BINDINGS', bindings => {
-                    if (bindings && typeof bindings === 'object') giftBindings = bindings;
-                });
+                socket.emit('GET_GIFT_BINDINGS', applyRemoteGiftConfig);
             } else {
                 syncGiftBindingsToBackend();
             }
@@ -509,6 +580,10 @@
                     }
                 }
             });
+        });
+
+        socket.on('GIFT_BINDINGS_UPDATED', config => {
+            if (OBS_MODE) applyRemoteGiftConfig(config);
         });
 
         socket.on('disconnect', () => {
