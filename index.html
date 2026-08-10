@@ -29,8 +29,8 @@
         h2 { color: #00ff88; font-size: 16px; text-transform: uppercase; }
         .form-group { display: flex; flex-direction: column; gap: 6px; }
         label { font-size: 12px; color: #aaa; }
-        input, textarea, button { padding: 10px; border-radius: 6px; border: none; font: inherit; font-size: 13px; }
-        input, textarea { background: #2a2a35; color: #fff; border: 1px solid #444; }
+        input, textarea, select, button { padding: 10px; border-radius: 6px; border: none; font: inherit; font-size: 13px; }
+        input, textarea, select { background: #2a2a35; color: #fff; border: 1px solid #444; }
         textarea { min-height: 72px; resize: vertical; }
         button { background: #00ff88; color: #000; font-weight: bold; cursor: pointer; }
         button:hover { background: #00cc6a; }
@@ -47,6 +47,22 @@
         .upload-control strong { font-size: 12px; color: #fff; }
         .upload-control input { width: 100%; padding: 6px; font-size: 10px; }
         .upload-hint { color: #8f9bad; font-size: 10px; line-height: 1.4; }
+        .fighter-command-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .fighter-command-column { display: flex; flex-direction: column; gap: 7px; padding: 8px; border: 1px solid #3d4658; border-radius: 9px; background: #14161d; }
+        .fighter-command-column.blue { border-top: 4px solid #2c92ff; }
+        .fighter-command-column.red { border-top: 4px solid #ff425b; }
+        .fighter-command-column h3 { text-align: center; font-size: 13px; }
+        .command-card { display: flex; flex-direction: column; gap: 4px; padding: 6px; border-radius: 7px; background: #242733; }
+        .command-card button { min-height: 38px; padding: 7px 5px; font-size: 11px; }
+        .command-card select { width: 100%; padding: 6px 4px; font-size: 10px; }
+        .command-gift-label { color: #9ea8b8; font-size: 9px; }
+        .gift-add-grid { display: grid; grid-template-columns: minmax(0, 1fr) 82px; gap: 6px; }
+        .gift-add-grid button { grid-column: 1 / -1; }
+        #gift-catalog-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; padding-right: 3px; }
+        .gift-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 7px 8px; border-radius: 6px; background: #151821; font-size: 11px; }
+        .gift-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .gift-value { color: #ffe16a; font-weight: 800; }
+        .gift-binding { grid-column: 1 / -1; color: #65e6a4; font-size: 9px; }
         body.obs-mode { width: 100vw; height: 100vh; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0; gap: 0; overflow: hidden; background: #000; }
         body.obs-mode #ui-panel { display: none; }
         body.obs-mode #stage-shell { width: min(100vw, calc(100vh * 9 / 16)); height: min(100vh, calc(100vw * 16 / 9)); flex: 0 0 auto; border: 0; border-radius: 0; box-shadow: none; }
@@ -100,17 +116,20 @@
 
         <hr style="border-color: #333;">
 
-        <h2>Test Lệnh Tương Tác</h2>
+        <h2>Lệnh Tương Tác Hai Võ Sĩ</h2>
+        <div id="fighter-command-grid" class="fighter-command-grid"></div>
         <button class="btn-test" onclick="sendTest('SPAWN_AUDIENCE', 'join')">+1 Khán giả mới vào phòng</button>
-        <button class="btn-test" onclick="sendTest('FINISHER', 'punch', { side: 'blue' })">Xanh hạ Đỏ bằng Đấm (!dam)</button>
-        <button class="btn-test" onclick="sendTest('FINISHER', 'kick', { side: 'blue' })">Xanh hạ Đỏ bằng Đá (!da)</button>
-        <button class="btn-test" onclick="sendTest('FINISHER', 'energy', { side: 'blue' })">Xanh hạ Đỏ bằng Chưởng (!chuong)</button>
-        <button class="btn-test" onclick="sendTest('FINISHER', 'punch', { side: 'red' })">Đỏ hạ Xanh bằng Đấm (!damdo)</button>
-        <button class="btn-test" onclick="sendTest('FINISHER', 'kick', { side: 'red' })">Đỏ hạ Xanh bằng Đá (!dado)</button>
-        <button class="btn-test" onclick="sendTest('FINISHER', 'energy', { side: 'red' })">Đỏ hạ Xanh bằng Chưởng (!chuongdo)</button>
         <button class="btn-test" onclick="sendTest('CAMERA', 'zoom_in')">Zoom Camera (!zoom)</button>
-        <button class="btn-test" onclick="sendTest('GIFT_RECEIVED', 'gift', { giftName: 'Rose', count: 1, diamondCount: 1 })">Test quà nhỏ</button>
-        <button class="btn-test" onclick="sendTest('GIFT_RECEIVED', 'gift', { giftName: 'TikTok Universe', count: 1, diamondCount: 34999, isLargeGift: true })">Test quà lớn → Đỏ tung chưởng</button>
+
+        <hr style="border-color: #333;">
+        <h2>Danh Sách Quà Tặng</h2>
+        <div class="upload-hint">Sắp xếp từ giá trị lớn đến nhỏ. Giá sẽ tự cập nhật khi quà thực tế xuất hiện trên live.</div>
+        <div class="gift-add-grid">
+            <input id="custom-gift-name" maxlength="60" placeholder="Tên quà TikTok">
+            <input id="custom-gift-value" type="number" min="0" step="1" placeholder="💎">
+            <button onclick="addCustomGift()">Thêm / cập nhật quà</button>
+        </div>
+        <div id="gift-catalog-list"></div>
 
         <hr style="border-color: #333;">
         <h2>Thay Thiết Kế Võ Sĩ</h2>
@@ -222,6 +241,226 @@
         });
         restoreNewsDisplay();
 
+        const GIFT_CATALOG_KEY = 'tiktok-arena-gift-catalog-v1';
+        const GIFT_BINDINGS_KEY = 'tiktok-arena-gift-bindings-v1';
+        const FIGHTER_COMMANDS = Object.freeze([
+            { action: 'punch', label: 'Đấm', icon: '🥊' },
+            { action: 'kick', label: 'Đá', icon: '🦵' },
+            { action: 'energy', label: 'Chưởng', icon: '⚡' }
+        ]);
+        const DEFAULT_GIFTS = Object.freeze([
+            ['TikTok Stars', 39999], ['TikTok Universe', 34999], ['Zeus', 34000],
+            ['Leon and Lion', 34000], ['Lion', 29999], ['Phoenix', 25999],
+            ["Adam's Dream", 25999], ['TikTok Shuttle', 20000], ['Castle Fantasy', 20000],
+            ['Planet', 15000], ['Interstellar', 10000], ['Yacht', 9888],
+            ['Sports Car', 7000], ['Private Jet', 4888], ['Whale Diving', 2150],
+            ['Galaxy', 1000], ['Gold Mine', 1000], ['Disco Ball', 1000],
+            ['Swan', 699], ['Money Gun', 500], ['Coral', 499], ['Hand Hearts', 100],
+            ['Doughnut', 30], ['Perfume', 20], ['Finger Heart', 5], ['Rose', 1], ['Hoa hồng', 1]
+        ]);
+        let giftCatalog = new Map();
+        let giftBindings = {};
+
+        function normalizeGiftName(name) {
+            return String(name || '').trim().toLocaleLowerCase('vi-VN');
+        }
+
+        function loadGiftConfiguration() {
+            giftCatalog = new Map(DEFAULT_GIFTS.map(([name, diamonds]) => [
+                normalizeGiftName(name), { name, diamonds, source: 'reference' }
+            ]));
+            try {
+                const savedCatalog = JSON.parse(localStorage.getItem(GIFT_CATALOG_KEY)) || [];
+                savedCatalog.forEach(gift => {
+                    const id = normalizeGiftName(gift.name);
+                    if (id) giftCatalog.set(id, {
+                        name: String(gift.name).trim(),
+                        diamonds: Math.max(0, Number(gift.diamonds) || 0),
+                        source: gift.source || 'custom'
+                    });
+                });
+            } catch {}
+            try {
+                giftBindings = JSON.parse(localStorage.getItem(GIFT_BINDINGS_KEY)) || {};
+            } catch {
+                giftBindings = {};
+            }
+        }
+
+        function sortedGifts() {
+            return [...giftCatalog.entries()]
+                .map(([id, gift]) => ({ id, ...gift }))
+                .sort((a, b) => b.diamonds - a.diamonds || a.name.localeCompare(b.name, 'vi'));
+        }
+
+        function saveGiftCatalog() {
+            localStorage.setItem(GIFT_CATALOG_KEY, JSON.stringify([...giftCatalog.values()]));
+        }
+
+        function commandKey(side, action) {
+            return `${side}:${action}`;
+        }
+
+        function commandDisplayName(key) {
+            const [side, action] = key.split(':');
+            const command = FIGHTER_COMMANDS.find(item => item.action === action);
+            return `${side === 'blue' ? 'Xanh' : 'Đỏ'} · ${command?.label || action}`;
+        }
+
+        function refreshGiftSelects() {
+            const gifts = sortedGifts();
+            document.querySelectorAll('.command-gift-select').forEach(select => {
+                const key = commandKey(select.dataset.side, select.dataset.action);
+                const selectedId = giftBindings[key] || '';
+                select.replaceChildren(new Option('— Chưa gắn quà —', ''));
+                gifts.forEach(gift => {
+                    select.add(new Option(`${gift.name} · ${gift.diamonds.toLocaleString('vi-VN')} 💎`, gift.id));
+                });
+                select.value = giftCatalog.has(selectedId) ? selectedId : '';
+            });
+        }
+
+        function renderGiftCatalog() {
+            const list = document.getElementById('gift-catalog-list');
+            list.replaceChildren();
+            sortedGifts().forEach(gift => {
+                const row = document.createElement('div');
+                row.className = 'gift-row';
+                const name = document.createElement('strong');
+                name.textContent = gift.name;
+                const value = document.createElement('span');
+                value.className = 'gift-value';
+                value.textContent = `${gift.diamonds.toLocaleString('vi-VN')} 💎`;
+                const assignments = Object.entries(giftBindings)
+                    .filter(([, giftId]) => giftId === gift.id)
+                    .map(([key]) => commandDisplayName(key));
+                const binding = document.createElement('span');
+                binding.className = 'gift-binding';
+                binding.textContent = assignments.length ? `Đã gắn: ${assignments.join(', ')}` : 'Chưa gắn lệnh';
+                row.append(name, value, binding);
+                list.appendChild(row);
+            });
+        }
+
+        function assignGift(side, action, giftId) {
+            const key = commandKey(side, action);
+            if (giftId) {
+                Object.keys(giftBindings).forEach(existingKey => {
+                    if (giftBindings[existingKey] === giftId) delete giftBindings[existingKey];
+                });
+                giftBindings[key] = giftId;
+            } else {
+                delete giftBindings[key];
+            }
+            localStorage.setItem(GIFT_BINDINGS_KEY, JSON.stringify(giftBindings));
+            syncGiftBindingsToBackend();
+            refreshGiftSelects();
+            renderGiftCatalog();
+        }
+
+        function syncGiftBindingsToBackend() {
+            if (socket && socket.connected && !OBS_MODE) {
+                socket.emit('UPDATE_GIFT_BINDINGS', giftBindings);
+            }
+        }
+
+        function addCustomGift() {
+            const nameInput = document.getElementById('custom-gift-name');
+            const valueInput = document.getElementById('custom-gift-value');
+            const name = nameInput.value.trim();
+            const diamonds = Number(valueInput.value);
+            if (!name || !Number.isFinite(diamonds) || diamonds < 0) {
+                alert('Hãy nhập tên quà và giá trị kim cương hợp lệ.');
+                return;
+            }
+            giftCatalog.set(normalizeGiftName(name), { name, diamonds: Math.round(diamonds), source: 'custom' });
+            saveGiftCatalog();
+            nameInput.value = '';
+            valueInput.value = '';
+            refreshGiftSelects();
+            renderGiftCatalog();
+        }
+
+        function rememberGiftFromEvent(data) {
+            const name = String(data.giftName || '').trim();
+            if (!name || name === 'Món quà') return;
+            const count = Math.max(1, Number(data.count) || 1);
+            const diamonds = Math.max(0, Math.round((Number(data.diamondCount) || 0) / count));
+            const id = normalizeGiftName(name);
+            const current = giftCatalog.get(id);
+            if (current && current.diamonds === diamonds && current.name === name) return;
+            giftCatalog.set(id, { name, diamonds, source: 'live' });
+            saveGiftCatalog();
+            refreshGiftSelects();
+            renderGiftCatalog();
+        }
+
+        function getGiftCommand(giftName) {
+            const giftId = normalizeGiftName(giftName);
+            const entry = Object.entries(giftBindings).find(([, assignedGift]) => assignedGift === giftId);
+            if (!entry) return null;
+            const [side, action] = entry[0].split(':');
+            return { side, action };
+        }
+
+        function testConfiguredCommand(side, action) {
+            const giftId = giftBindings[commandKey(side, action)];
+            const gift = giftCatalog.get(giftId);
+            if (!gift) {
+                sendTest('FINISHER', action, { side });
+                return;
+            }
+            sendTest('GIFT_RECEIVED', 'gift', {
+                giftName: gift.name,
+                count: 1,
+                diamondCount: gift.diamonds,
+                isLargeGift: gift.diamonds >= 10
+            });
+        }
+
+        function renderFighterCommands() {
+            const grid = document.getElementById('fighter-command-grid');
+            grid.replaceChildren();
+            [['blue', 'VÕ SĨ XANH'], ['red', 'VÕ SĨ ĐỎ']].forEach(([side, title]) => {
+                const column = document.createElement('div');
+                column.className = `fighter-command-column ${side}`;
+                const heading = document.createElement('h3');
+                heading.textContent = title;
+                column.appendChild(heading);
+                FIGHTER_COMMANDS.forEach(command => {
+                    const card = document.createElement('div');
+                    card.className = 'command-card';
+                    const button = document.createElement('button');
+                    button.className = 'btn-test';
+                    button.textContent = `${command.icon} ${command.label}`;
+                    button.addEventListener('click', () => testConfiguredCommand(side, command.action));
+                    const label = document.createElement('span');
+                    label.className = 'command-gift-label';
+                    label.textContent = 'Quà kích hoạt:';
+                    const select = document.createElement('select');
+                    select.className = 'command-gift-select';
+                    select.dataset.side = side;
+                    select.dataset.action = command.action;
+                    select.addEventListener('change', () => assignGift(side, command.action, select.value));
+                    card.append(button, label, select);
+                    column.appendChild(card);
+                });
+                grid.appendChild(column);
+            });
+            refreshGiftSelects();
+        }
+
+        loadGiftConfiguration();
+        renderFighterCommands();
+        renderGiftCatalog();
+        window.addEventListener('storage', event => {
+            if (event.key === GIFT_CATALOG_KEY || event.key === GIFT_BINDINGS_KEY) {
+                loadGiftConfiguration();
+                refreshGiftSelects();
+                renderGiftCatalog();
+            }
+        });
+
         const socket = io(BACKEND_URL, {
             transports: ['polling', 'websocket']
         });
@@ -245,6 +484,13 @@
         socket.on('connect', () => {
             log("Đã kết nối thành công tới Server Render!");
             setTestButtonsEnabled(true);
+            if (OBS_MODE) {
+                socket.emit('GET_GIFT_BINDINGS', bindings => {
+                    if (bindings && typeof bindings === 'object') giftBindings = bindings;
+                });
+            } else {
+                syncGiftBindingsToBackend();
+            }
             socket.timeout(5000).emit('GET_TIKTOK_STATUS', (err, status) => {
                 if (err || !status) return;
 
@@ -649,10 +895,11 @@
             const camera = sceneRef.cameras.main;
             const count = Math.max(1, Number(data.count) || 1);
             const giftName = data.giftName || 'Món quà';
-            const isLargeGift = data.isLargeGift === true || Number(data.diamondCount) >= 10;
+            rememberGiftFromEvent(data);
+            const giftCommand = data.giftCommand || getGiftCommand(giftName);
             giftPresentationActive = true;
 
-            if (isLargeGift) {
+            if (giftCommand) {
                 combatLocked = true;
                 finisherSequence += 1;
                 if (finisherTimer) finisherTimer.remove(false);
@@ -694,9 +941,13 @@
             giftCleanupTimer = sceneRef.time.delayedCall(3000, () => {
                 giftCleanupTimer = null;
                 giftPresentationActive = false;
-                if (isLargeGift) {
+                if (giftCommand) {
                     pendingFinisher = null;
-                    sceneRef.time.delayedCall(120, () => runFinisher('red', 'energy', data.user || 'Quà lớn'));
+                    sceneRef.time.delayedCall(120, () => runFinisher(
+                        giftCommand.side,
+                        giftCommand.action,
+                        data.user || giftName
+                    ));
                 } else if (pendingFinisher) {
                     const queued = pendingFinisher;
                     pendingFinisher = null;
