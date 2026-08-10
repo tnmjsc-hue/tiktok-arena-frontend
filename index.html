@@ -1060,6 +1060,17 @@
         let club3DCharacters = [];
         let club3DSpotIndex = 0;
         const club3DTweens = [];
+        let club3DCinema = null;
+        let club3DCinemaCameraSway = 0;
+        const CLUB3D_FIXED_SHOTS = [
+            { name: 'establish', pos: [0, 3.1, 6.6], look: [0, 1.1, -0.4], fov: 52, holdMin: 2.4, holdMax: 3.4 },
+            { name: 'dance_pull', pos: [0, 1.7, 3.1], look: [0, 0.95, 0.2], fov: 55, holdMin: 2.0, holdMax: 2.8 },
+            { name: 'low_angle', pos: [0, 0.4, 2.5], look: [0, 1.3, -0.3], fov: 58, holdMin: 1.8, holdMax: 2.6 },
+            { name: 'dj', pos: [-2.6, 1.85, -2.1], look: [-2.6, 0.85, -0.9], fov: 45, holdMin: 1.8, holdMax: 2.5 },
+            { name: 'bar', pos: [2.7, 1.75, -1.7], look: [2.55, 0.9, -0.8], fov: 45, holdMin: 1.8, holdMax: 2.4 },
+            { name: 'ceiling', pos: [0, 3.3, 3.4], look: [0, 3.5, -0.6], fov: 62, holdMin: 1.8, holdMax: 2.4 },
+            { name: 'corner_sweep', pos: [1.7, 2.2, 2.3], look: [-1.1, 1.0, 0.3], fov: 52, holdMin: 2.0, holdMax: 2.8 }
+        ];
         const CLUB3D_SPOTS = Object.freeze([
             { x: -1.2, z: 1.1 }, { x: -0.4, z: 1.4 }, { x: 0.4, z: 1.4 }, { x: 1.2, z: 1.1 },
             { x: -1.6, z: 0.25 }, { x: 1.6, z: 0.25 }, { x: -0.9, z: -0.3 }, { x: 0.9, z: -0.3 },
@@ -1089,11 +1100,12 @@
             club3DScene = scene;
 
             const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 40);
-            camera.position.set(0, 2.4, 5.6);
-            camera.lookAt(0, 1.3, -0.5);
+            camera.position.set(0, 3.1, 6.6);
+            camera.lookAt(0, 1.1, -0.4);
             club3DCamera = camera;
 
             club3DClock = new THREE.Clock();
+            club3DCinema = createClub3DCinema();
 
             // Ánh sáng
             scene.add(new THREE.AmbientLight(0x554e6e, 0.5));
@@ -1410,7 +1422,7 @@
                 }
             }
 
-            club3DCamera.lookAt(0, 1.25, -0.5);
+            updateClub3DCinema(dt);
             club3DRenderer.render(club3DScene, club3DCamera);
         }
 
@@ -1422,6 +1434,162 @@
             club3DRenderer.setSize(w, h, false);
             club3DCamera.aspect = w / h;
             club3DCamera.updateProjectionMatrix();
+        }
+
+        // ==========================================
+        // HỆ CAMERA ĐIỆN ẢNH CLUB 3D
+        // ==========================================
+        function createClub3DCinema() {
+            const shot = CLUB3D_FIXED_SHOTS[0];
+            club3DCamera.position.set(shot.pos[0], shot.pos[1], shot.pos[2]);
+            club3DCamera.fov = shot.fov;
+            club3DCamera.lookAt(shot.look[0], shot.look[1], shot.look[2]);
+            club3DCamera.updateProjectionMatrix();
+            const lookPos = new THREE.Vector3(shot.look[0], shot.look[1], shot.look[2]);
+            return {
+                phase: 'hold',
+                t: 0,
+                dur: 0,
+                hold: 1.6,
+                shot,
+                char: null,
+                rel: null,
+                fromPos: new THREE.Vector3().copy(club3DCamera.position),
+                fromLook: lookPos.clone(),
+                fromFov: shot.fov,
+                toPos: new THREE.Vector3(shot.pos[0], shot.pos[1], shot.pos[2]),
+                toLook: lookPos.clone(),
+                toFov: shot.fov,
+                lookPos,
+                lastName: shot.name
+            };
+        }
+
+        function clampClub3DCamPos(v) {
+            v.x = Math.max(-3.05, Math.min(3.05, v.x));
+            v.y = Math.max(0.3, Math.min(3.4, v.y));
+            v.z = Math.max(-2.85, Math.min(3.5, v.z));
+            return v;
+        }
+
+        function pickClub3DShot(cin) {
+            const wantChar = club3DCharacters.length > 0 && Math.random() < 0.55;
+            if (wantChar) {
+                const c = Phaser.Math.RND.pick(club3DCharacters);
+                if (c && c.group) {
+                    const px = c.group.position.x;
+                    const pz = c.group.position.z;
+                    const len = Math.hypot(px, pz);
+                    const ox = len > 0.01 ? px / len : 0.5;
+                    const oz = len > 0.01 ? pz / len : 0.5;
+                    const close = Math.random() < 0.62;
+                    const d = close ? 0.85 : 1.2;
+                    const perp = Math.random() < 0.5 ? 1 : -1;
+                    const rx = ox * d - oz * 0.5 * perp;
+                    const rz = oz * d + ox * 0.5 * perp;
+                    return {
+                        name: close ? 'char_close' : 'char_medium',
+                        pos: [px + rx, close ? 1.4 : 1.6, pz + rz],
+                        look: [px, 1.32, pz],
+                        fov: close ? 40 : 47,
+                        holdMin: close ? 1.4 : 1.8,
+                        holdMax: close ? 2.2 : 2.7,
+                        char: c,
+                        rel: [rx, close ? 1.4 : 1.6, rz]
+                    };
+                }
+            }
+            const pool = CLUB3D_FIXED_SHOTS.filter(s => s.name !== cin.lastName);
+            return Phaser.Math.RND.pick(pool);
+        }
+
+        function startClub3DShot(cin) {
+            const shot = pickClub3DShot(cin);
+            const quick = Math.random() < 0.28;
+            cin.fromPos.copy(club3DCamera.position);
+            cin.fromLook.copy(cin.lookPos);
+            cin.fromFov = club3DCamera.fov;
+            cin.char = shot.char || null;
+            cin.rel = shot.rel || null;
+            cin.toPos.set(shot.pos[0], shot.pos[1], shot.pos[2]);
+            cin.toLook.set(shot.look[0], shot.look[1], shot.look[2]);
+            cin.toFov = shot.fov;
+            cin.holdMin = shot.holdMin;
+            cin.holdMax = shot.holdMax;
+            cin.dur = quick ? 0.35 : Phaser.Math.FloatBetween(1.0, 1.5);
+            cin.t = 0;
+            cin.phase = 'transition';
+            cin.lastName = shot.name;
+        }
+
+        function updateClub3DCinema(dt) {
+            const cin = club3DCinema;
+            if (!cin) return;
+            const cam = club3DCamera;
+
+            if (cin.char && cin.char.group) {
+                const cp = cin.char.group.position;
+                const rel = cin.rel || [0.9, 1.4, 0.5];
+                cin.toPos.set(cp.x + rel[0], cp.y + rel[1], cp.z + rel[2]);
+                cin.toLook.set(cp.x, cp.y + 1.32, cp.z);
+                clampClub3DCamPos(cin.toPos);
+            }
+
+            if (cin.phase === 'transition') {
+                cin.t += dt / cin.dur;
+                const k = Math.min(1, cin.t);
+                const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+                cam.position.lerpVectors(cin.fromPos, cin.toPos, e);
+                cam.fov = cin.fromFov + (cin.toFov - cin.fromFov) * e;
+                cam.updateProjectionMatrix();
+                const shake = (1 - e) * 0.02;
+                cam.position.x += Math.sin(club3DTime * 31.7) * shake;
+                cam.position.y += Math.cos(club3DTime * 27.3) * shake * 0.6;
+                cin.lookPos.copy(cin.fromLook).lerp(cin.toLook, e);
+                cam.lookAt(cin.lookPos);
+                if (k >= 1) {
+                    cin.phase = 'hold';
+                    cin.hold = Phaser.Math.FloatBetween(cin.holdMin || 2, cin.holdMax || 3);
+                    cin.fromPos.copy(cam.position);
+                    cin.fromLook.copy(cin.lookPos);
+                    cin.fromFov = cam.fov;
+                }
+            } else {
+                club3DCinemaCameraSway += dt;
+                const sway = 0.025;
+                cin.lookPos.copy(cin.toLook);
+                cin.lookPos.x += Math.sin(club3DCinemaCameraSway * 0.7) * sway;
+                cin.lookPos.y += Math.cos(club3DCinemaCameraSway * 0.55) * sway * 0.5;
+                cam.lookAt(cin.lookPos);
+                cin.hold -= dt;
+                if (cin.hold <= 0) startClub3DShot(cin);
+            }
+        }
+
+        function club3DPunchIn(char) {
+            const cin = club3DCinema;
+            if (!cin) return;
+            const c = char || (club3DCharacters.length ? Phaser.Math.RND.pick(club3DCharacters) : null);
+            if (!c || !c.group) {
+                startClub3DShot(cin);
+                return;
+            }
+            const cp = c.group.position;
+            const rel = [0.55, 1.3, 0.4];
+            cin.fromPos.copy(club3DCamera.position);
+            cin.fromLook.copy(cin.lookPos);
+            cin.fromFov = club3DCamera.fov;
+            cin.toPos.set(cp.x + rel[0], cp.y + rel[1], cp.z + rel[2]);
+            cin.toLook.set(cp.x, cp.y + 1.35, cp.z);
+            cin.toFov = 36;
+            cin.char = c;
+            cin.rel = rel;
+            cin.holdMin = 1.3;
+            cin.holdMax = 1.7;
+            cin.dur = 0.42;
+            cin.t = 0;
+            cin.phase = 'transition';
+            cin.lastName = 'punch_in';
         }
 
         function club3DSpawnViewer(user) {
@@ -1472,9 +1640,7 @@
                     addClub3DTween(target, 'jumpY', 0.5, 0, 280, true);
                 });
             }
-            addClub3DTween(club3DCamera.position, 'z', 5.6, 4.1, 450, true, () => {
-                addClub3DTween(club3DCamera.position, 'z', 4.1, 5.6, 700, false);
-            });
+            club3DPunchIn(target);
             showNewsAlert('QUÀ TẶNG 3D', `🎁 ${user} tặng ${giftName || 'món quà'}!`, 2600, 2);
         }
 
