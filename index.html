@@ -61,6 +61,11 @@
         <button class="btn-test" onclick="sendTest('SPAWN_AUDIENCE', 'join')">+1 Khán giả mới vào phòng</button>
         <button class="btn-test" onclick="sendTest('ATTACK', 'punch')">Võ sĩ 1 Đấm (!dam)</button>
         <button class="btn-test" onclick="sendTest('ATTACK', 'kick')">Võ sĩ 1 Đá (!da)</button>
+        <button class="btn-test" onclick="sendTest('ATTACK', 'energy')">Võ sĩ 1 Chưởng (!chuong)</button>
+        <button class="btn-test" onclick="sendTest('DEFENSE', 'block')">Võ sĩ 2 Đỡ (!do)</button>
+        <button class="btn-test" onclick="sendTest('DEFENSE', 'dodge')">Võ sĩ 2 Né (!ne)</button>
+        <button class="btn-test" onclick="sendTest('REACTION', 'hit')">Võ sĩ 2 Trúng đòn (!trung)</button>
+        <button class="btn-test" onclick="sendTest('REACTION', 'knockdown')">Võ sĩ 2 Gục ngã (!nga)</button>
         <button class="btn-test" onclick="sendTest('CAMERA', 'zoom_in')">Zoom Camera (!zoom)</button>
         <button class="btn-test" onclick="sendTest('GIFT_RECEIVED', 'gift', { giftName: 'Rose', count: 1, diamondCount: 1 })">Test tặng Hoa Hồng</button>
         <button class="btn-test" onclick="sendTest('ULTIMATE', 'strike')">Quà Khủng (Kỹ năng tối thượng)</button>
@@ -144,20 +149,29 @@
         let giftCleanupTimer = null;
         let focusedGiftAudience = null;
 
-        function preload() {
-            let g = this.add.graphics();
-            
-            // Vẽ Võ sĩ 1 (Xanh)
-            g.fillStyle(0x00aaff, 1);
-            g.fillRect(0, 0, 40, 80);
-            g.generateTexture('fighter1_tex', 40, 80);
-            g.clear();
+        const FIGHTER_FRAME = Object.freeze({
+            idle: 0,
+            punch: 1,
+            kick: 2,
+            energy: 3,
+            block: 4,
+            hit: 5,
+            dodge: 6,
+            knockdown: 7
+        });
+        const fighterPoseTimers = new Map();
 
-            // Vẽ Võ sĩ 2 (Đỏ)
-            g.fillStyle(0xff4444, 1);
-            g.fillRect(0, 0, 40, 80);
-            g.generateTexture('fighter2_tex', 40, 80);
-            g.clear();
+        function preload() {
+            this.load.spritesheet('fighter_blue', 'assets/fighter-blue.png', {
+                frameWidth: 384,
+                frameHeight: 512
+            });
+            this.load.spritesheet('fighter_red', 'assets/fighter-red.png', {
+                frameWidth: 384,
+                frameHeight: 512
+            });
+
+            let g = this.add.graphics();
 
             // Vẽ Khán giả (Trắng hạt tròn)
             g.fillStyle(0xffffff, 1);
@@ -191,8 +205,12 @@
             this.add.rectangle(270, 805, 480, 18, 0x00aa66);
 
             // Hai Võ sĩ
-            fighter1 = this.add.sprite(175, 675, 'fighter1_tex');
-            fighter2 = this.add.sprite(365, 675, 'fighter2_tex');
+            fighter1 = this.add.sprite(155, 805, 'fighter_blue', FIGHTER_FRAME.idle)
+                .setOrigin(0.5, 0.88)
+                .setScale(0.58);
+            fighter2 = this.add.sprite(385, 805, 'fighter_red', FIGHTER_FRAME.idle)
+                .setOrigin(0.5, 0.88)
+                .setScale(0.58);
 
             // Text hiển thị hành động
             actionText = this.add.text(270, 505, 'SẴN SÀNG ĐẤU!', {
@@ -207,6 +225,46 @@
         }
 
         function update() {}
+
+        function playPose(fighter, pose, duration = 650) {
+            const oldTimer = fighterPoseTimers.get(fighter);
+            if (oldTimer) oldTimer.remove(false);
+
+            fighter.setFrame(FIGHTER_FRAME[pose] ?? FIGHTER_FRAME.idle);
+            const timer = sceneRef.time.delayedCall(duration, () => {
+                if (fighter.active) {
+                    fighter.setFrame(FIGHTER_FRAME.idle);
+                    fighter.clearTint();
+                }
+                fighterPoseTimers.delete(fighter);
+            });
+            fighterPoseTimers.set(fighter, timer);
+        }
+
+        function playHitReaction(knockdown = false) {
+            playPose(fighter2, knockdown ? 'knockdown' : 'hit', knockdown ? 2200 : 700);
+            fighter2.setTint(0xffb0b0);
+            sceneRef.cameras.main.shake(knockdown ? 220 : 110, knockdown ? 0.018 : 0.009);
+        }
+
+        function launchEnergyProjectile() {
+            const orb = sceneRef.add.circle(fighter1.x + 68, fighter1.y - 118, 17, 0x4fdcff, 0.95)
+                .setStrokeStyle(5, 0xe8ffff, 1);
+            orb.setBlendMode(Phaser.BlendModes.ADD);
+            sceneRef.tweens.add({
+                targets: orb,
+                x: fighter2.x - 30,
+                scaleX: 1.7,
+                scaleY: 1.7,
+                duration: 430,
+                ease: 'Sine.easeIn',
+                onComplete: () => {
+                    orb.destroy();
+                    playHitReaction(false);
+                    sceneRef.cameras.main.flash(120, 80, 210, 255);
+                }
+            });
+        }
 
         function addAudience(user) {
             if (audiences.length >= 50) {
@@ -313,25 +371,47 @@
             else if (data.type === 'ATTACK') {
                 if (data.action === 'punch') {
                     actionText.setText(`${data.user}: TUNG CÚ ĐẤM!`);
+                    playPose(fighter1, 'punch', 520);
                     sceneRef.tweens.add({
                         targets: fighter1,
-                        x: 340,
+                        x: 220,
                         duration: 150,
                         yoyo: true,
-                        onYoyo: () => sceneRef.cameras.main.shake(100, 0.01)
+                        onYoyo: () => playHitReaction(false)
                     });
                 } else if (data.action === 'kick') {
                     actionText.setText(`${data.user}: TUNG CÚ ĐÁ!`);
+                    playPose(fighter1, 'kick', 650);
                     sceneRef.tweens.add({
                         targets: fighter1,
-                        x: 355,
-                        angle: -20,
+                        x: 225,
                         duration: 200,
                         yoyo: true,
-                        onComplete: () => fighter1.setAngle(0)
+                        onYoyo: () => playHitReaction(false)
                     });
+                } else if (data.action === 'energy') {
+                    actionText.setText(`${data.user}: TUNG CHƯỞNG!`);
+                    playPose(fighter1, 'energy', 900);
+                    sceneRef.time.delayedCall(180, launchEnergyProjectile);
                 }
-            } 
+            }
+            // 3. PHÒNG THỦ
+            else if (data.type === 'DEFENSE') {
+                if (data.action === 'block') {
+                    actionText.setText(`${data.user}: ĐỠ ĐÒN!`);
+                    playPose(fighter2, 'block', 1000);
+                } else if (data.action === 'dodge') {
+                    actionText.setText(`${data.user}: NÉ ĐÒN!`);
+                    playPose(fighter2, 'dodge', 850);
+                    sceneRef.tweens.add({ targets: fighter2, x: 425, duration: 220, yoyo: true });
+                }
+            }
+            // 4. PHẢN ỨNG TRÚNG ĐÒN
+            else if (data.type === 'REACTION') {
+                const knockedDown = data.action === 'knockdown';
+                actionText.setText(`${data.user}: ${knockedDown ? 'GỤC NGÃ!' : 'TRÚNG ĐÒN!'}`);
+                playHitReaction(knockedDown);
+            }
             // 3. CAMERA
             else if (data.type === 'CAMERA') {
                 if (data.action === 'zoom_in') {
