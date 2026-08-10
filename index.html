@@ -20,6 +20,7 @@
         button:hover { background: #00cc6a; }
         .btn-test { background: #3a3a4a; color: #fff; }
         .btn-test:hover { background: #5a5a6a; }
+        .btn-test:disabled { opacity: 0.45; cursor: not-allowed; }
         #status-box { padding: 8px; background: #2a2a35; border-radius: 6px; font-size: 12px; border-left: 4px solid #ff4444; }
         .status-online { border-left-color: #00ff88 !important; }
         #log-box { flex: 1; background: #0d0d11; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; overflow-y: auto; color: #00ff88; }
@@ -63,6 +64,14 @@
         const LIVE_INPUT_KEY = 'tiktok-arena-live-input';
         let connectRequestInFlight = false;
 
+        function setTestButtonsEnabled(enabled) {
+            document.querySelectorAll('.btn-test').forEach(button => {
+                button.disabled = !enabled;
+            });
+        }
+
+        setTestButtonsEnabled(false);
+
         function log(msg) {
             const box = document.getElementById('log-box');
             box.innerHTML += `<div>> ${msg}</div>`;
@@ -71,6 +80,7 @@
 
         socket.on('connect', () => {
             log("Đã kết nối thành công tới Server Render!");
+            setTestButtonsEnabled(true);
             socket.timeout(5000).emit('GET_TIKTOK_STATUS', (err, status) => {
                 if (err || !status) return;
 
@@ -89,6 +99,11 @@
                     }
                 }
             });
+        });
+
+        socket.on('disconnect', () => {
+            setTestButtonsEnabled(false);
+            log('Mất kết nối Server Render, đang chờ kết nối lại...');
         });
 
         const config = {
@@ -285,10 +300,22 @@
         }
 
         function sendTest(type, action) {
+            if (!socket.connected) {
+                log('Chưa kết nối Server Render nên chưa thể gửi lệnh test.');
+                return;
+            }
+
             fetch(`${BACKEND_URL}/api/test-command`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type, action, user: 'User_' + Math.floor(Math.random()*100) })
+            }).then(async response => {
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.error || `Backend trả lỗi ${response.status}`);
+                }
+            }).catch(err => {
+                log(`Không gửi được lệnh test: ${err.message}`);
             });
         }
     </script>
