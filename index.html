@@ -263,6 +263,53 @@
                 <div class="upload-hint" id="club3d-count-line">Đang có 0 người trên sàn.</div>
             </div>
             <details class="char-panel" open>
+                <summary>🎛 Sân Khấu &amp; DJ</summary>
+                <div class="upload-hint">Thiết kế nền sân khấu sau màn hình lớn, bàn DJ, nhân vật DJ và sàn. Khán giả tặng quà đã chọn sẽ tạm thời thay DJ mặc định.</div>
+                <div class="form-group">
+                    <label>Chủ đề nhanh:</label>
+                    <button class="btn-test" onclick="club3DApplyTheme('neon')">Neon</button>
+                    <button class="btn-test" onclick="club3DApplyTheme('minimal')">Tối giản</button>
+                    <button class="btn-test" onclick="club3DApplyTheme('club')">Club</button>
+                </div>
+                <div class="upload-grid">
+                    <label class="upload-control">Nền sân khấu
+                        <input type="color" id="club3d-set-stage" value="#150a24" oninput="club3DSetConfig.stage=this.value" onchange="club3DApplySetConfig()">
+                    </label>
+                    <label class="upload-control">Viền neon
+                        <input type="color" id="club3d-set-glow" value="#ff4dd8" oninput="club3DSetConfig.glow=this.value" onchange="club3DApplySetConfig()">
+                    </label>
+                    <label class="upload-control">Bàn DJ
+                        <input type="color" id="club3d-set-djtable" value="#1d1233" oninput="club3DSetConfig.djTable=this.value" onchange="club3DApplySetConfig()">
+                    </label>
+                    <label class="upload-control">Sàn
+                        <input type="color" id="club3d-set-floor" value="#0c0a16" oninput="club3DSetConfig.floor=this.value" onchange="club3DApplySetConfig()">
+                    </label>
+                </div>
+                <div class="upload-grid">
+                    <label class="upload-control">Ảnh nền sân khấu
+                        <input type="file" id="club3d-set-stage-img" accept="image/png,image/webp,image/jpeg" onchange="club3DUploadStageImage(this.files[0])">
+                    </label>
+                    <button class="btn-test" onclick="club3DClearStageImage()">🗑 Xoá ảnh nền</button>
+                </div>
+                <div class="upload-grid">
+                    <label class="upload-control">Tên DJ mặc định
+                        <input type="text" id="club3d-set-djname" maxlength="18" value="DJ" onchange="club3DSetField('djName', this.value || 'DJ', true)">
+                    </label>
+                    <label class="upload-control">Màu DJ
+                        <input type="color" id="club3d-set-djcolor" value="#ff4dd8" oninput="club3DSetConfig.djColor=this.value" onchange="club3DApplySetConfig()">
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>Quà tặng đổi DJ:
+                        <select id="club3d-set-djgift" onchange="club3DSetField('djGift', this.value, false)"></select>
+                    </label>
+                    <label>Giữ DJ mới (giây):
+                        <input type="number" id="club3d-set-djdur" min="5" max="300" value="20" style="width:70px" onchange="club3DSetField('djDuration', Math.max(5, Math.min(300, parseInt(this.value, 10) || 20)), false)">
+                    </label>
+                </div>
+                <div class="upload-hint" id="club3d-set-status">Chọn chủ đề nhanh hoặc đổi màu để dựng lại sân khấu.</div>
+            </details>
+            <details class="char-panel" open>
                 <summary>🎨 Nhân Vật &amp; Model</summary>
                 <div class="upload-hint">Tạo các nhân vật khác nhau (màu + hoạ tiết + động tác + thời gian đổi động tác). Khán giả bước vào sàn sẽ tự nhận ngẫu nhiên một nhân vật.</div>
                 <div class="form-group">
@@ -496,6 +543,321 @@
         let giftBindings = {};
         let fighterNames = { blue: 'VÕ SĨ XANH', red: 'VÕ SĨ ĐỎ' };
 
+        // ==========================================
+        // THIẾT KẾ SÂN KHẤU & DJ (nền sau màn hình lớn, bàn DJ, nhân vật DJ, sàn)
+        // ==========================================
+        const CLUB3D_SET_KEY = 'tiktok-arena-club3d-set-v1';
+        const CLUB3D_SET_THEMES = {
+            neon: { stage: '#150a24', glow: '#ff4dd8', djTable: '#1d1233', floor: '#0c0a16', djColor: '#ff4dd8' },
+            minimal: { stage: '#0d1117', glow: '#00cfff', djTable: '#10151c', floor: '#0a0d12', djColor: '#00cfff' },
+            club: { stage: '#3a0d14', glow: '#ff5c73', djTable: '#2a1838', floor: '#140a10', djColor: '#ff5c73' }
+        };
+        const CLUB3D_SET_DEFAULTS = {
+            theme: 'neon', stage: '#150a24', glow: '#ff4dd8', djTable: '#1d1233', floor: '#0c0a16',
+            stageImage: null, djName: 'DJ', djColor: '#ff4dd8', djGift: '', djDuration: 20
+        };
+        let club3DSetConfig = (() => {
+            try {
+                const raw = JSON.parse(localStorage.getItem(CLUB3D_SET_KEY));
+                if (raw && typeof raw === 'object') return Object.assign({}, CLUB3D_SET_DEFAULTS, raw);
+            } catch {}
+            return Object.assign({}, CLUB3D_SET_DEFAULTS);
+        })();
+        let club3DSetGroup = null;
+        let club3DDefaultDJ = null;
+        let club3DTempDJ = null;
+        let club3DDJTakenBy = null;
+        let club3DDJTakeoverUntil = 0;
+        let club3DDJBuildSeq = 0;
+        const CLUB3D_DJ_SPOT = Object.freeze({ x: -2.6, z: -1.55 });
+
+        function saveClub3DSetConfig() {
+            try { localStorage.setItem(CLUB3D_SET_KEY, JSON.stringify(club3DSetConfig)); } catch {}
+        }
+
+        function disposeClub3DMesh(obj) {
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) {
+                if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                else obj.material.dispose();
+            }
+        }
+
+        function disposeClub3DSet() {
+            if (club3DSetGroup) {
+                club3DSetGroup.traverse(obj => { if (obj.isMesh) disposeClub3DMesh(obj); });
+                club3DScene.remove(club3DSetGroup);
+            }
+            club3DSetGroup = null;
+        }
+
+        function buildClub3DSet(scene) {
+            disposeClub3DSet();
+            const cfg = club3DSetConfig;
+            const group = new THREE.Group();
+            scene.add(group);
+            club3DSetGroup = group;
+
+            // Sàn
+            const floor = new THREE.Mesh(
+                new THREE.PlaneGeometry(16, 16),
+                new THREE.MeshStandardMaterial({ color: cfg.floor, roughness: 0.95 })
+            );
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            group.add(floor);
+
+            // Nền sân khấu sau màn hình lớn
+            const stageMat = new THREE.MeshStandardMaterial({ color: cfg.stage, roughness: 0.92 });
+            if (cfg.stageImage) {
+                try {
+                    const tex = new THREE.TextureLoader().load(cfg.stageImage);
+                    if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+                    stageMat.map = tex;
+                } catch {}
+            }
+            const backdrop = new THREE.Mesh(new THREE.BoxGeometry(10, 4.2, 0.4), stageMat);
+            backdrop.position.set(0, 2.1, -3.6);
+            group.add(backdrop);
+
+            // Viền neon quanh nền sân khấu
+            const glowMat = new THREE.MeshBasicMaterial({ color: cfg.glow });
+            const edgeSpecs = [
+                new THREE.BoxGeometry(10.1, 0.05, 0.05),
+                new THREE.BoxGeometry(10.1, 0.05, 0.05),
+                new THREE.BoxGeometry(0.05, 4.2, 0.05),
+                new THREE.BoxGeometry(0.05, 4.2, 0.05)
+            ];
+            const edgePos = [[0, 4.15, -3.35], [0, 0.05, -3.35], [5, 2.1, -3.35], [-5, 2.1, -3.35]];
+            for (let i = 0; i < 4; i++) {
+                const e = new THREE.Mesh(edgeSpecs[i], glowMat);
+                e.position.set(edgePos[i][0], edgePos[i][1], edgePos[i][2]);
+                group.add(e);
+            }
+
+            // Bậc sân khấu nâng trước nền
+            const platform = new THREE.Mesh(
+                new THREE.BoxGeometry(6.4, 0.2, 1.5),
+                new THREE.MeshStandardMaterial({ color: cfg.stage, roughness: 0.9 })
+            );
+            platform.position.set(0, 0.1, -2.9);
+            platform.receiveShadow = true;
+            group.add(platform);
+            const platEdge = new THREE.Mesh(
+                new THREE.BoxGeometry(6.45, 0.04, 0.04),
+                new THREE.MeshBasicMaterial({ color: cfg.glow })
+            );
+            platEdge.position.set(0, 0.22, -2.14);
+            group.add(platEdge);
+
+            // Bàn DJ (bên trái)
+            const djTable = new THREE.Mesh(
+                new THREE.BoxGeometry(1.7, 0.8, 0.7),
+                new THREE.MeshStandardMaterial({ color: cfg.djTable, roughness: 0.6 })
+            );
+            djTable.position.set(-2.6, 0.4, -1.1);
+            djTable.castShadow = true;
+            group.add(djTable);
+            for (const [dx, color] of [[-0.35, cfg.glow], [0, 0x00cfff], [0.35, 0xffd166]]) {
+                const disc = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.26, 0.26, 0.06, 20),
+                    new THREE.MeshBasicMaterial({ color })
+                );
+                disc.position.set(-2.6 + dx, 0.83, -1.1);
+                group.add(disc);
+            }
+
+            // Ô đèn sàn nhảy
+            for (let i = 0; i < 24; i++) {
+                const a = (i / 24) * Math.PI * 2;
+                const tile = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.22, 0.02, 0.22),
+                    new THREE.MeshBasicMaterial({ color: i % 2 ? cfg.glow : 0x222233 })
+                );
+                tile.position.set(Math.cos(a) * 1.25, 0.035, Math.sin(a) * 1.25);
+                group.add(tile);
+            }
+        }
+
+        function club3DRemoveDJ(dj) {
+            if (!dj || !dj.group) return;
+            club3DScene.remove(dj.group);
+            if (dj.mixer) { try { dj.mixer.stopAllAction(); } catch {} }
+            dj.group.traverse(obj => {
+                if (obj.isMesh) disposeClub3DMesh(obj);
+            });
+        }
+
+        async function buildClub3DDJ(name, color) {
+            const seq = ++club3DDJBuildSeq;
+            const preset = {
+                name: String(name || club3DSetConfig.djName || 'DJ'),
+                tint: color || club3DSetConfig.djColor || '#ff4dd8',
+                scale: 1.0,
+                clips: []
+            };
+            let person = club3DAssets ? await buildClub3DPersonFromGLB(name, preset) : null;
+            if (seq !== club3DDJBuildSeq) {
+                if (person) club3DRemoveDJ(person);
+                return null;
+            }
+            if (!person) person = buildClub3DPerson(preset);
+            person.group.position.set(CLUB3D_DJ_SPOT.x, 0, CLUB3D_DJ_SPOT.z);
+            person.group.rotation.y = Math.PI / 2;
+            person.baseY = 0;
+            person.mode = 'dance';
+            person.intervalMin = 6;
+            person.intervalMax = 11;
+            person.speed = 1.6;
+            person.user = String(name || club3DSetConfig.djName || 'DJ');
+            person.phase = Math.random() * Math.PI * 2;
+            if (!person.clipTimer) person.clipTimer = club3DTime + 2;
+            const sprite = makeClub3DNameSprite(person.user);
+            const charH = new THREE.Box3().setFromObject(person.group).max.y;
+            sprite.position.y = (charH || 1.2) + 0.18;
+            person.group.add(sprite);
+            club3DScene.add(person.group);
+            return person;
+        }
+
+        function club3DSpawnDefaultDJ() {
+            club3DRemoveDJ(club3DDefaultDJ);
+            club3DRemoveDJ(club3DTempDJ);
+            club3DDefaultDJ = null;
+            club3DTempDJ = null;
+            club3DDJTakenBy = null;
+            buildClub3DDJ(club3DSetConfig.djName || 'DJ', club3DSetConfig.djColor || '#ff4dd8')
+                .then(p => { if (p) club3DDefaultDJ = p; });
+        }
+
+        function club3DDJTakeover(user) {
+            if (!club3DVisible || !club3DRenderer) return;
+            club3DRemoveDJ(club3DDefaultDJ);
+            club3DDefaultDJ = null;
+            club3DRemoveDJ(club3DTempDJ);
+            club3DTempDJ = null;
+            club3DDJTakenBy = String(user || 'Khán giả').trim() || 'Khán giả';
+            club3DDJTakeoverUntil = club3DTime + Math.max(5, Number(club3DSetConfig.djDuration) || 20);
+            const color = '#' + Number(CLUB_PALETTE[Phaser.Math.Between(0, CLUB_PALETTE.length - 1)]).toString(16).padStart(6, '0');
+            buildClub3DDJ(club3DDJTakenBy, color).then(p => {
+                if (p && club3DDJTakenBy) club3DTempDJ = p;
+            });
+            showNewsAlert('DJ', `🎧 ${club3DDJTakenBy} lên làm DJ!`, 2600, 2);
+            log(`Club 3D: ${club3DDJTakenBy} thay DJ mặc định trong ${club3DSetConfig.djDuration || 20}s.`);
+        }
+
+        function club3DAnimateDJs(dt) {
+            if (club3DTempDJ && club3DTime >= club3DDJTakeoverUntil) {
+                club3DRemoveDJ(club3DTempDJ);
+                club3DTempDJ = null;
+                club3DDJTakenBy = null;
+                club3DSpawnDefaultDJ();
+            }
+            for (const dj of [club3DDefaultDJ, club3DTempDJ]) {
+                if (!dj || !dj.group) continue;
+                const g = dj.group;
+                g.position.y = (dj.baseY || 0) + 0.04 * Math.abs(Math.sin(club3DTime * 2 + dj.phase));
+                g.rotation.y = Math.PI / 2 + Math.sin(club3DTime * 0.8 + dj.phase) * 0.35;
+                if (dj.mixer) {
+                    if (club3DTime >= (dj.clipTimer || 0)) {
+                        dj.clipTimer = club3DTime + Phaser.Math.FloatBetween(dj.intervalMin || 6, dj.intervalMax || 11);
+                        const pool = (dj.clipPool && dj.clipPool.length) ? dj.clipPool : ((club3DAssets && club3DAssets.animClips) || []);
+                        if (pool.length > 1) {
+                            const others = pool.filter(a => a.name !== dj.clipName);
+                            const next = others.length ? Phaser.Math.RND.pick(others) : Phaser.Math.RND.pick(pool);
+                            if (next) {
+                                try {
+                                    dj.mixer.stopAllAction();
+                                    dj.mixer.clipAction(next, dj.model).play();
+                                    dj.clipName = next.name;
+                                } catch {}
+                            }
+                        }
+                    }
+                    dj.mixer.update(dt);
+                }
+            }
+        }
+
+        function rebuildClub3DSet() {
+            if (!club3DScene) return;
+            buildClub3DSet(club3DScene);
+            club3DSpawnDefaultDJ();
+        }
+
+        function club3DApplySetConfig() {
+            saveClub3DSetConfig();
+            rebuildClub3DSet();
+            const el = document.getElementById('club3d-set-status');
+            if (el) el.textContent = 'Đã áp dụng thiết kế sân khấu & DJ.';
+        }
+
+        function club3DSetField(field, value, rebuild) {
+            club3DSetConfig[field] = value;
+            saveClub3DSetConfig();
+            if (rebuild) rebuildClub3DSet();
+            else {
+                const el = document.getElementById('club3d-set-status');
+                if (el) el.textContent = 'Đã lưu.';
+            }
+        }
+
+        function club3DApplyTheme(name) {
+            const t = CLUB3D_SET_THEMES[name];
+            if (!t) return;
+            Object.assign(club3DSetConfig, t, { theme: name });
+            saveClub3DSetConfig();
+            renderClub3DSetPanel();
+            rebuildClub3DSet();
+            const el = document.getElementById('club3d-set-status');
+            if (el) el.textContent = `Đã áp dụng chủ đề "${name}".`;
+        }
+
+        function club3DUploadStageImage(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                club3DSetConfig.stageImage = reader.result;
+                saveClub3DSetConfig();
+                rebuildClub3DSet();
+                const el = document.getElementById('club3d-set-status');
+                if (el) el.textContent = `Đã dùng ảnh nền: ${file.name}`;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function club3DClearStageImage() {
+            club3DSetConfig.stageImage = null;
+            saveClub3DSetConfig();
+            rebuildClub3DSet();
+            const el = document.getElementById('club3d-set-status');
+            if (el) el.textContent = 'Đã xoá ảnh nền.';
+        }
+
+        function renderClub3DGiftSelect() {
+            const sel = document.getElementById('club3d-set-djgift');
+            if (!sel) return;
+            const opts = [['', 'Bất kỳ quà nào'], ['__none__', 'Tắt (không đổi DJ)']];
+            [...giftCatalog.values()].forEach(g => opts.push([normalizeGiftName(g.name), g.name]));
+            const current = club3DSetConfig.djGift || '';
+            sel.innerHTML = '';
+            opts.forEach(([val, label]) => sel.add(new Option(label, val)));
+            sel.value = giftCatalog.has(current) ? current : '';
+        }
+
+        function renderClub3DSetPanel() {
+            const cfg = club3DSetConfig;
+            const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+            set('club3d-set-stage', cfg.stage);
+            set('club3d-set-glow', cfg.glow);
+            set('club3d-set-djtable', cfg.djTable);
+            set('club3d-set-floor', cfg.floor);
+            set('club3d-set-djname', cfg.djName);
+            set('club3d-set-djcolor', cfg.djColor);
+            set('club3d-set-djdur', cfg.djDuration);
+            renderClub3DGiftSelect();
+        }
+
         function normalizeGiftName(name) {
             return String(name || '').trim().toLocaleLowerCase('vi-VN');
         }
@@ -603,6 +965,7 @@
                 row.append(name, value, binding);
                 list.appendChild(row);
             });
+            renderClub3DGiftSelect();
         }
 
         function renderStageGiftBoards() {
@@ -800,6 +1163,13 @@
                 renderGiftCatalog();
                 renderStageGiftBoards();
             }
+            if (event.key === CLUB3D_SET_KEY) {
+                try {
+                    club3DSetConfig = Object.assign({}, CLUB3D_SET_DEFAULTS, JSON.parse(event.newValue || '{}'));
+                } catch {}
+                renderClub3DSetPanel();
+                rebuildClub3DSet();
+            }
         });
 
         const socket = io(BACKEND_URL, {
@@ -969,13 +1339,12 @@
         let club3DCloseUpChance = 0.55;
         let club3DShakeAmt = 0.5;
         const CLUB3D_FIXED_SHOTS = [
-            { name: 'establish', pos: [0, 3.1, 6.6], look: [0, 1.1, -0.4], fov: 52, holdMin: 2.4, holdMax: 3.4 },
-            { name: 'dance_pull', pos: [0, 1.7, 3.1], look: [0, 0.95, 0.2], fov: 55, holdMin: 2.0, holdMax: 2.8 },
-            { name: 'low_angle', pos: [0, 0.4, 2.5], look: [0, 1.3, -0.3], fov: 58, holdMin: 1.8, holdMax: 2.6 },
-            { name: 'dj', pos: [-2.6, 1.85, -2.1], look: [-2.6, 0.85, -0.9], fov: 45, holdMin: 1.8, holdMax: 2.5 },
-            { name: 'bar', pos: [2.7, 1.75, -1.7], look: [2.55, 0.9, -0.8], fov: 45, holdMin: 1.8, holdMax: 2.4 },
-            { name: 'ceiling', pos: [0, 3.3, 3.4], look: [0, 3.5, -0.6], fov: 62, holdMin: 1.8, holdMax: 2.4 },
-            { name: 'corner_sweep', pos: [1.7, 2.2, 2.3], look: [-1.1, 1.0, 0.3], fov: 52, holdMin: 2.0, holdMax: 2.8 }
+            { name: 'establish', pos: [0, 3.1, 6.6], look: [0, 0.9, -0.4], fov: 52, holdMin: 2.4, holdMax: 3.4 },
+            { name: 'dance_pull', pos: [0, 1.7, 3.1], look: [0, 0.7, 0.2], fov: 55, holdMin: 2.0, holdMax: 2.8 },
+            { name: 'low_angle', pos: [0, 0.4, 2.5], look: [0, 0.95, -0.3], fov: 58, holdMin: 1.8, holdMax: 2.6 },
+            { name: 'dj', pos: [-2.6, 1.85, -2.1], look: [-2.6, 0.85, -1.0], fov: 45, holdMin: 1.8, holdMax: 2.5 },
+            { name: 'stage', pos: [0, 2.2, 2.6], look: [0, 1.0, -1.6], fov: 52, holdMin: 2.0, holdMax: 2.8 },
+            { name: 'corner_sweep', pos: [1.7, 2.2, 2.3], look: [-1.1, 0.8, 0.3], fov: 52, holdMin: 2.0, holdMax: 2.8 }
         ];
         const CLUB3D_SPOTS = Object.freeze([
             { x: -1.2, z: 1.1 }, { x: -0.4, z: 1.4 }, { x: 0.4, z: 1.4 }, { x: 1.2, z: 1.1 },
@@ -1220,7 +1589,7 @@
             }
             const bones = club3DFindBones(model);
             const variation = preset && preset.scale ? preset.scale : Phaser.Math.FloatBetween(0.92, 1.1);
-            const base = club3DFitModelToFloor(model, 1.7);
+            const base = club3DFitModelToFloor(model, 1.2);
             model.scale.setScalar(base * variation);
             const box = new THREE.Box3().setFromObject(model);
             model.position.y += -box.min.y;
@@ -1323,172 +1692,8 @@
             barSpot.position.set(2.3, 1.6, 1.6);
             scene.add(barSpot);
 
-            // Sàn
-            const floor = new THREE.Mesh(
-                new THREE.PlaneGeometry(16, 16),
-                new THREE.MeshStandardMaterial({ color: 0x14101f, roughness: 0.95 })
-            );
-            floor.rotation.x = -Math.PI / 2;
-            floor.receiveShadow = true;
-            scene.add(floor);
-
-            // Sàn nhảy (disc phát sáng)
-            const danceFloor = new THREE.Mesh(
-                new THREE.CylinderGeometry(1.9, 2.0, 0.06, 40),
-                new THREE.MeshStandardMaterial({ color: 0x1c1230, roughness: 0.5, emissive: 0x1a0a2a, emissiveIntensity: 0.7 })
-            );
-            danceFloor.position.y = 0.03;
-            danceFloor.receiveShadow = true;
-            scene.add(danceFloor);
-
-            const ring = new THREE.Mesh(
-                new THREE.RingGeometry(1.92, 2.05, 48),
-                new THREE.MeshBasicMaterial({ color: 0xff4dd8 })
-            );
-            ring.rotation.x = -Math.PI / 2;
-            ring.position.y = 0.07;
-            scene.add(ring);
-
-            // Ô đèn sàn nhảy
-            for (let i = 0; i < 24; i++) {
-                const a = (i / 24) * Math.PI * 2;
-                const tile = new THREE.Mesh(
-                    new THREE.BoxGeometry(0.22, 0.02, 0.22),
-                    new THREE.MeshBasicMaterial({ color: CLUB_PALETTE[i % CLUB_PALETTE.length] })
-                );
-                tile.position.set(Math.cos(a) * 1.25, 0.07, Math.sin(a) * 1.25);
-                scene.add(tile);
-            }
-
-            // Tường sau + trần
-            const wallMat = new THREE.MeshStandardMaterial({ color: 0x191228, roughness: 0.95 });
-            const backWall = new THREE.Mesh(new THREE.BoxGeometry(10, 4.2, 0.4), wallMat);
-            backWall.position.set(0, 2.1, -3.6);
-            scene.add(backWall);
-            const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 4.2, 8), wallMat);
-            leftWall.position.set(-3.6, 2.1, 0);
-            scene.add(leftWall);
-            const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 4.2, 8), wallMat);
-            rightWall.position.set(3.6, 2.1, 0);
-            scene.add(rightWall);
-            const ceiling = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.4, 7.6), wallMat);
-            ceiling.position.set(0, 3.9, 0);
-            scene.add(ceiling);
-            // Neon trên trần
-            for (let i = 0; i < 10; i++) {
-                const strip = new THREE.Mesh(
-                    new THREE.BoxGeometry(0.5, 0.05, 0.05),
-                    new THREE.MeshBasicMaterial({ color: CLUB_PALETTE[i % CLUB_PALETTE.length] })
-                );
-                strip.position.set(-3 + i * 0.67, 3.82, -1.4);
-                scene.add(strip);
-            }
-
-            // Quầy bar (bên phải)
-            const barMat = new THREE.MeshStandardMaterial({ color: 0x2a1838, roughness: 0.6 });
-            const counter = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.9, 0.8), barMat);
-            counter.position.set(2.6, 0.45, -0.8);
-            counter.castShadow = true;
-            scene.add(counter);
-            const counterTop = new THREE.Mesh(
-                new THREE.BoxGeometry(2.0, 0.1, 0.9),
-                new THREE.MeshStandardMaterial({ color: 0x3a2150, roughness: 0.4 })
-            );
-            counterTop.position.set(2.6, 0.95, -0.8);
-            scene.add(counterTop);
-            const barEdge = new THREE.Mesh(
-                new THREE.BoxGeometry(2.05, 0.06, 0.06),
-                new THREE.MeshBasicMaterial({ color: 0x00ff9d })
-            );
-            barEdge.position.set(2.6, 1.0, -1.25);
-            scene.add(barEdge);
-            // Ghế quầy
-            for (let i = 0; i < 3; i++) {
-                const stool = new THREE.Group();
-                stool.add(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.5, 8), barMat));
-                const seat = new THREE.Mesh(
-                    new THREE.CylinderGeometry(0.22, 0.22, 0.08, 10),
-                    new THREE.MeshStandardMaterial({ color: CLUB_PALETTE[i % CLUB_PALETTE.length], roughness: 0.5 })
-                );
-                seat.position.y = 0.29;
-                stool.add(seat);
-                stool.position.set(2.6, 0, 0.35 + i * 0.55);
-                scene.add(stool);
-            }
-
-            // Booth DJ (bên trái)
-            const djTable = new THREE.Mesh(
-                new THREE.BoxGeometry(1.7, 0.8, 0.7),
-                new THREE.MeshStandardMaterial({ color: 0x1d1233, roughness: 0.6 })
-            );
-            djTable.position.set(-2.6, 0.4, -0.9);
-            djTable.castShadow = true;
-            scene.add(djTable);
-            for (const [dx, color] of [[-0.35, 0xff4dd8], [0, 0x00cfff], [0.35, 0xffd166]]) {
-                const disc = new THREE.Mesh(
-                    new THREE.CylinderGeometry(0.26, 0.26, 0.06, 20),
-                    new THREE.MeshBasicMaterial({ color })
-                );
-                disc.position.set(-2.6 + dx, 0.83, -0.9);
-                scene.add(disc);
-            }
-
-            // Bàn ghế góc trước
-            for (let i = 0; i < 2; i++) {
-                const table = new THREE.Mesh(
-                    new THREE.CylinderGeometry(0.35, 0.42, 0.55, 10),
-                    new THREE.MeshStandardMaterial({ color: 0x241631, roughness: 0.7 })
-                );
-                table.position.set(i === 0 ? -2.3 : 2.3, 0.28, 1.9);
-                scene.add(table);
-                const seatL = new THREE.Mesh(
-                    new THREE.BoxGeometry(0.6, 0.42, 0.5),
-                    new THREE.MeshStandardMaterial({ color: CLUB_PALETTE[(i * 3) % CLUB_PALETTE.length], roughness: 0.6 })
-                );
-                seatL.position.set(i === 0 ? -2.85 : 1.85, 0.21, 1.9);
-                scene.add(seatL);
-                const seatR = new THREE.Mesh(
-                    new THREE.BoxGeometry(0.6, 0.42, 0.5),
-                    new THREE.MeshStandardMaterial({ color: CLUB_PALETTE[(i * 3 + 1) % CLUB_PALETTE.length], roughness: 0.6 })
-                );
-                seatR.position.set(i === 0 ? -1.75 : 2.75, 0.21, 1.9);
-                scene.add(seatR);
-            }
-
-            buildClub3DCrowd();
-        }
-
-        function buildClub3DCrowd() {
-            const scene = club3DScene;
-            const bodyGeo = new THREE.BoxGeometry(0.34, 0.95, 0.22);
-            const headGeo = new THREE.SphereGeometry(0.15, 6, 5);
-            const bodyMat = new THREE.MeshStandardMaterial({ roughness: 0.8 });
-            const headMat = new THREE.MeshStandardMaterial({ color: 0xd9a37a, roughness: 0.9 });
-            const count = 36;
-            const bodies = new THREE.InstancedMesh(bodyGeo, bodyMat, count);
-            const heads = new THREE.InstancedMesh(headGeo, headMat, count);
-            const dummy = new THREE.Object3D();
-            for (let i = 0; i < count; i++) {
-                const a = (i / count) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.15, 0.15);
-                const r = Phaser.Math.FloatBetween(2.15, 3.3);
-                const x = Math.cos(a) * r;
-                const z = Math.sin(a) * r;
-                dummy.position.set(x, 0.55, z);
-                dummy.rotation.y = -a + Math.PI;
-                dummy.scale.setScalar(Phaser.Math.FloatBetween(0.85, 1.15));
-                dummy.updateMatrix();
-                bodies.setMatrixAt(i, dummy.matrix);
-                dummy.position.y = 1.15;
-                dummy.updateMatrix();
-                heads.setMatrixAt(i, dummy.matrix);
-                bodies.setColorAt(i, new THREE.Color().setHSL(Phaser.Math.FloatBetween(0, 1), 0.55, 0.45));
-            }
-            bodies.instanceMatrix.needsUpdate = true;
-            heads.instanceMatrix.needsUpdate = true;
-            if (bodies.instanceColor) bodies.instanceColor.needsUpdate = true;
-            bodies.frustumCulled = false;
-            heads.frustumCulled = false;
-            scene.add(bodies, heads);
+            buildClub3DSet(scene);
+            club3DSpawnDefaultDJ();
         }
 
         function buildClub3DPerson(preset) {
@@ -1601,7 +1806,7 @@
                 depthTest: false
             }));
             sprite.scale.set(1.1, 0.28, 1);
-            sprite.position.y = 2.05;
+            sprite.position.y = 0;
             return sprite;
         }
 
@@ -1679,25 +1884,27 @@
                     }
                 }
 
-                if (c.mixer) {
-                    if (c.mode === 'dance' && club3DTime >= c.clipTimer) {
-                        c.clipTimer = club3DTime + Phaser.Math.FloatBetween(c.intervalMin || 7, c.intervalMax || 13);
-                        const pool = (c.clipPool && c.clipPool.length) ? c.clipPool : ((club3DAssets && club3DAssets.animClips) || []);
-                        if (pool.length > 1) {
-                            const others = pool.filter(a => a.name !== c.clipName);
-                            const next = others.length ? Phaser.Math.RND.pick(others) : Phaser.Math.RND.pick(pool);
-                            if (next) {
-                                try {
-                                    c.mixer.stopAllAction();
-                                    c.mixer.clipAction(next, c.model).play();
-                                    c.clipName = next.name;
-                                } catch {}
+                    if (c.mixer) {
+                        if (c.mode === 'dance' && club3DTime >= c.clipTimer) {
+                            c.clipTimer = club3DTime + Phaser.Math.FloatBetween(c.intervalMin || 7, c.intervalMax || 13);
+                            const pool = (c.clipPool && c.clipPool.length) ? c.clipPool : ((club3DAssets && club3DAssets.animClips) || []);
+                            if (pool.length > 1) {
+                                const others = pool.filter(a => a.name !== c.clipName);
+                                const next = others.length ? Phaser.Math.RND.pick(others) : Phaser.Math.RND.pick(pool);
+                                if (next) {
+                                    try {
+                                        c.mixer.stopAllAction();
+                                        c.mixer.clipAction(next, c.model).play();
+                                        c.clipName = next.name;
+                                    } catch {}
+                                }
                             }
                         }
+                        if (c.mode === 'dance') c.mixer.update(dt);
                     }
-                    if (c.mode === 'dance') c.mixer.update(dt);
                 }
-            }
+
+                club3DAnimateDJs(dt);
 
             for (let i = club3DTweens.length - 1; i >= 0; i--) {
                 const tw = club3DTweens[i];
@@ -1884,7 +2091,7 @@
             cin.fromPos.copy(club3DCamera.position);
             cin.fromLook.copy(cin.lookPos);
             cin.fromFov = club3DCamera.fov;
-            cin.toLook.set(cp.x, cp.y + 1.35, cp.z);
+            cin.toLook.set(cp.x, cp.y + 0.95, cp.z);
             cin.toPos.set(cp.x + rel[0], cp.y + rel[1], cp.z + rel[2]);
             cin.toPos.sub(cin.toLook).multiplyScalar(club3DZoom).add(cin.toLook);
             clampClub3DCamPos(cin.toPos);
@@ -2298,7 +2505,10 @@
             if (!person.speed) person.speed = Phaser.Math.FloatBetween(2.6, 4.4);
             if (!person.clipTimer) person.clipTimer = club3DTime + Phaser.Math.FloatBetween(person.intervalMin || 7, person.intervalMax || 13);
             if (!person.danceUntil) person.danceUntil = club3DTime + Phaser.Math.FloatBetween(4, 8);
-            person.group.add(makeClub3DNameSprite(user));
+            const sprite = makeClub3DNameSprite(user);
+            const charH = new THREE.Box3().setFromObject(person.group).max.y;
+            sprite.position.y = (charH || 1.5) + 0.18;
+            person.group.add(sprite);
             club3DScene.add(person.group);
             club3DCharacters.push(person);
             club3DUpdateCountLabel();
@@ -2319,6 +2529,10 @@
 
         function club3DReactGift(user, giftName) {
             if (!club3DVisible || !club3DRenderer) return;
+            if (club3DSetConfig.djGift !== '__none__') {
+                const match = !club3DSetConfig.djGift || normalizeGiftName(giftName || '') === club3DSetConfig.djGift;
+                if (match) club3DDJTakeover(user);
+            }
             const target = club3DCharacters.find(c => c.user === String(user || '').trim())
                 || Phaser.Math.RND.pick(club3DCharacters);
             if (target) {
@@ -2408,6 +2622,7 @@
             scheduleSparring(900);
             restoreCustomFighterAtlases();
             initClub3DCharacterPanel();
+            renderClub3DSetPanel();
             applyMode();
         }
 
