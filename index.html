@@ -33,8 +33,8 @@
         <h2>TikTok Arena 2D</h2>
         
         <div class="form-group">
-            <label>Kết nối TikTok Username (Live):</label>
-            <input type="text" id="tiktok-username" placeholder="Ví dụ: abc_live">
+            <label>Kết nối TikTok Live:</label>
+            <input type="text" id="tiktok-username" placeholder="Nhập @username hoặc link vt.tiktok.com/...">
             <button onclick="connectTikTok()">Kết Nối Live</button>
         </div>
 
@@ -236,13 +236,22 @@
 
         function connectTikTok() {
             const username = document.getElementById('tiktok-username').value;
-            if (!username) return alert("Vui lòng nhập Username TikTok!");
+            if (!username) return alert("Vui lòng nhập Username hoặc link TikTok Live!");
 
-            log(`Đang gửi yêu cầu kết nối TikTok: @${username}...`);
+            log(`Đang gửi yêu cầu kết nối TikTok: ${username}...`);
             fetch(`${BACKEND_URL}/api/connect-tiktok`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username })
+            }).then(async response => {
+                const data = await response.json();
+                if (!response.ok) {
+                    const message = data.error || 'Không thể kết nối TikTok Live';
+                    log(`Lỗi: ${message}`);
+                    alert(message);
+                }
+            }).catch(err => {
+                log(`Lỗi gọi Backend: ${err.message}`);
             });
         }
 
