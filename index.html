@@ -268,6 +268,71 @@
             sceneRef.cameras.main.shake(knockdown ? 220 : 100, knockdown ? 0.018 : 0.008);
         }
 
+        function createEnergyImpact(defender, attackerSide) {
+            const direction = attackerSide === 'blue' ? 1 : -1;
+            const color = attackerSide === 'blue' ? 0x4fdcff : 0xff5c73;
+            const secondaryColor = attackerSide === 'blue' ? 0xc8fbff : 0xffd166;
+            const impactX = defender.x - (direction * 34);
+            const impactY = defender.y - 112;
+
+            const core = sceneRef.add.circle(impactX, impactY, 24, secondaryColor, 0.95)
+                .setBlendMode(Phaser.BlendModes.ADD);
+            const shockwave = sceneRef.add.circle(impactX, impactY, 28, color, 0)
+                .setStrokeStyle(7, secondaryColor, 1)
+                .setScale(0.35)
+                .setBlendMode(Phaser.BlendModes.ADD);
+
+            sceneRef.tweens.add({
+                targets: core,
+                scaleX: 2.4,
+                scaleY: 2.4,
+                alpha: 0,
+                duration: 260,
+                ease: 'Quad.easeOut',
+                onComplete: () => core.destroy()
+            });
+            sceneRef.tweens.add({
+                targets: shockwave,
+                scaleX: 2.8,
+                scaleY: 2.8,
+                alpha: 0,
+                duration: 420,
+                ease: 'Cubic.easeOut',
+                onComplete: () => shockwave.destroy()
+            });
+
+            for (let i = 0; i < 14; i++) {
+                const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+                const distance = Phaser.Math.Between(45, 105);
+                const spark = sceneRef.add.circle(
+                    impactX,
+                    impactY,
+                    Phaser.Math.Between(3, 7),
+                    i % 2 === 0 ? color : secondaryColor,
+                    1
+                ).setBlendMode(Phaser.BlendModes.ADD);
+                sceneRef.tweens.add({
+                    targets: spark,
+                    x: impactX + (Math.cos(angle) * distance),
+                    y: impactY + (Math.sin(angle) * distance),
+                    scaleX: 0.2,
+                    scaleY: 0.2,
+                    alpha: 0,
+                    duration: Phaser.Math.Between(280, 460),
+                    ease: 'Quad.easeOut',
+                    onComplete: () => spark.destroy()
+                });
+            }
+
+            sceneRef.tweens.add({
+                targets: defender,
+                x: defender.x + (direction * 28),
+                duration: 150,
+                ease: 'Quad.easeOut'
+            });
+            sceneRef.cameras.main.shake(230, 0.022);
+        }
+
         function launchEnergyProjectile(attacker, defender, attackerSide, onImpact) {
             const direction = attackerSide === 'blue' ? 1 : -1;
             const color = attackerSide === 'blue' ? 0x4fdcff : 0xff5c73;
@@ -283,6 +348,7 @@
                 ease: 'Sine.easeIn',
                 onComplete: () => {
                     orb.destroy();
+                    createEnergyImpact(defender, attackerSide);
                     onImpact();
                     sceneRef.cameras.main.flash(120, 80, 210, 255);
                 }
