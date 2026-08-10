@@ -4,27 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sàn Đấu Võ 2D TikTok Live</title>
-    <!-- Phaser 3 Engine -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-    <!-- Socket.io Client -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #111; color: #fff; overflow: hidden; display: flex; height: 100vh; }
         #game-container { flex: 1; height: 100%; position: relative; }
-        
-        /* Dashboard điều khiển bên cạnh */
-        #ui-panel { width: 320px; background: #1e1e24; padding: 20px; border-left: 2px solid #333; display: flex; flex-direction: column; gap: 15px; }
-        h2 { color: #00ff88; font-size: 18px; text-transform: uppercase; letter-spacing: 1px; }
+        #ui-panel { width: 320px; background: #1e1e24; padding: 20px; border-left: 2px solid #333; display: flex; flex-direction: column; gap: 12px; }
+        h2 { color: #00ff88; font-size: 16px; text-transform: uppercase; }
         .form-group { display: flex; flex-direction: column; gap: 6px; }
         label { font-size: 12px; color: #aaa; }
-        input, button { padding: 10px; border-radius: 6px; border: none; font-size: 14px; }
+        input, button { padding: 10px; border-radius: 6px; border: none; font-size: 13px; }
         input { background: #2a2a35; color: #fff; border: 1px solid #444; }
-        button { background: #00ff88; color: #000; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button { background: #00ff88; color: #000; font-weight: bold; cursor: pointer; }
         button:hover { background: #00cc6a; }
-        .btn-test { background: #3a3a4a; color: #fff; margin-top: 5px; }
+        .btn-test { background: #3a3a4a; color: #fff; }
         .btn-test:hover { background: #5a5a6a; }
-        #status-box { padding: 10px; background: #2a2a35; border-radius: 6px; font-size: 12px; border-left: 4px solid #ff4444; }
+        #status-box { padding: 8px; background: #2a2a35; border-radius: 6px; font-size: 12px; border-left: 4px solid #ff4444; }
         .status-online { border-left-color: #00ff88 !important; }
         #log-box { flex: 1; background: #0d0d11; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; overflow-y: auto; color: #00ff88; }
     </style>
@@ -46,36 +42,24 @@
 
         <hr style="border-color: #333;">
 
-        <h2>Bảng Test Lệnh Tương Tác</h2>
+        <h2>Test Lệnh Tương Tác</h2>
+        <button class="btn-test" onclick="sendTest('SPAWN_AUDIENCE', 'join')">+1 Khán giả mới vào phòng</button>
         <button class="btn-test" onclick="sendTest('ATTACK', 'punch')">Võ sĩ 1 Đấm (!dam)</button>
         <button class="btn-test" onclick="sendTest('ATTACK', 'kick')">Võ sĩ 1 Đá (!da)</button>
         <button class="btn-test" onclick="sendTest('CAMERA', 'zoom_in')">Zoom Camera (!zoom)</button>
-        <button class="btn-test" onclick="sendTest('SPAWN_AUDIENCE', 'spawn')">Tặng Hoa Hồng (Khán giả)</button>
         <button class="btn-test" onclick="sendTest('ULTIMATE', 'strike')">Quà Khủng (Kỹ năng tối thượng)</button>
 
-        <label style="margin-top: 10px;">Nhật ký sự kiện:</label>
+        <label>Nhật ký sự kiện:</label>
         <div id="log-box"></div>
     </div>
 
     <script>
-		// Thay thế đoạn kết nối Socket cũ bằng đoạn này:
-		const BACKEND_URL = 'https://tiktok-arena-backend.onrender.com';
+        // THAY BẰNG LINK RENDER CỦA BẠN VÀO DÒNG DƯỚI DÂY:
+        const BACKEND_URL = 'https://tiktok-arena-backend.onrender.com';
 
-		const socket = io(BACKEND_URL, {
-			transports: ['polling', 'websocket'], // Bắt buộc cho Render/Vercel
-			reconnection: true,
-			reconnectionAttempts: 5,
-			timeout: 20000
-		});
-
-		// Thêm sự kiện lắng nghe trạng thái kết nối Server
-		socket.on('connect', () => {
-			log("Đã kết nối thành công tới Server Render!");
-		});
-
-		socket.on('connect_error', (err) => {
-			log("Lỗi kết nối Server Render: " + err.message);
-		});
+        const socket = io(BACKEND_URL, {
+            transports: ['polling', 'websocket']
+        });
 
         function log(msg) {
             const box = document.getElementById('log-box');
@@ -83,31 +67,26 @@
             box.scrollTop = box.scrollHeight;
         }
 
-        // ==========================================
-        // KHỞI TẠO GAME PHASER 3
-        // ==========================================
+        socket.on('connect', () => {
+            log("Đã kết nối thành công tới Server Render!");
+        });
+
         const config = {
             type: Phaser.AUTO,
             parent: 'game-container',
             width: 1000,
             height: 700,
             backgroundColor: '#1a1a24',
-            physics: {
-                default: 'arcade',
-                arcade: { gravity: { y: 0 }, debug: false }
-            },
             scene: { preload, create, update }
         };
 
         const game = new Phaser.Game(config);
 
-        let fighter1, fighter2;
-        let actionText;
+        let fighter1, fighter2, actionText;
         let audiences = [];
         let sceneRef;
 
         function preload() {
-            // Tạo graphics vẽ tạm hình nhân vật võ sĩ dạng Vector pixel (không cần ảnh ngoài)
             let g = this.add.graphics();
             
             // Vẽ Võ sĩ 1 (Xanh)
@@ -122,10 +101,10 @@
             g.generateTexture('fighter2_tex', 40, 80);
             g.clear();
 
-            // Vẽ Khán giả (Vàng)
-            g.fillStyle(0xffcc00, 1);
-            g.fillCircle(10, 10, 10);
-            g.generateTexture('audience_tex', 20, 20);
+            // Vẽ Khán giả (Trắng hạt tròn)
+            g.fillStyle(0xffffff, 1);
+            g.fillCircle(8, 8, 8);
+            g.generateTexture('audience_tex', 16, 16);
             g.destroy();
         }
 
@@ -133,22 +112,22 @@
             sceneRef = this;
 
             // Sàn đấu Võ
-            let ring = this.add.rectangle(500, 450, 700, 250, 0x2a2a38);
+            let ring = this.add.rectangle(500, 480, 700, 220, 0x2a2a38);
             ring.setStrokeStyle(4, 0x00ff88);
 
             // Khán đài phía sau
-            this.add.rectangle(500, 200, 800, 150, 0x15151e);
-            this.add.text(420, 140, 'KHÁN ĐÀI', { fill: '#444', fontSize: '28px', fontWeight: 'bold' });
+            this.add.rectangle(500, 200, 800, 160, 0x15151e);
+            this.add.text(420, 130, 'KHÁN ĐÀI', { fill: '#333', fontSize: '28px', fontWeight: 'bold' });
 
             // Hai Võ sĩ
-            fighter1 = this.add.sprite(350, 420, 'fighter1_tex');
-            fighter2 = this.add.sprite(650, 420, 'fighter2_tex');
+            fighter1 = this.add.sprite(350, 440, 'fighter1_tex');
+            fighter2 = this.add.sprite(650, 440, 'fighter2_tex');
 
-            // Text hiển thị hành động trên đầu
-            actionText = this.add.text(500, 300, 'SẴN SÀNG ĐẤU!', { 
-                fontSize: '20px', 
+            // Text hiển thị hành động
+            actionText = this.add.text(500, 320, 'SẴN SÀNG ĐẤU!', { 
+                fontSize: '18px', 
                 fill: '#00ff88', 
-                fontStyle: 'bold',
+                fontWeight: 'bold',
                 backgroundColor: '#000000aa',
                 padding: { x: 10, y: 5 }
             }).setOrigin(0.5);
@@ -158,25 +137,56 @@
 
         function update() {}
 
-        // ==========================================
-        // XỬ LÝ LỆNH TỪ SOCKET.IO
-        // ==========================================
+        // Xử lý Lệnh từ Server gửi xuống
         socket.on('GAME_COMMAND', (data) => {
-            log(`Lệnh nhận: ${data.type} - ${data.action || ''} (${data.user || ''})`);
+            log(`${data.type} - ${data.action || ''} (${data.user || ''})`);
 
-            if (data.type === 'ATTACK') {
+            // 1. TẠO KHÁN GIẢ MỚI
+            if (data.type === 'SPAWN_AUDIENCE') {
+                actionText.setText(`${data.user} VỪA VÀO PHÒNG!`);
+                
+                // Giới hạn tối đa 50 khán giả để không bị giật lag
+                if (audiences.length >= 50) {
+                    let oldAud = audiences.shift();
+                    oldAud.sprite.destroy();
+                    oldAud.text.destroy();
+                }
+
+                let rx = Phaser.Math.Between(150, 850);
+                let ry = Phaser.Math.Between(160, 240);
+                
+                let audSprite = sceneRef.add.sprite(rx, ry, 'audience_tex');
+                audSprite.setTint(Phaser.Display.Color.RandomRGB().color);
+
+                let nameTag = sceneRef.add.text(rx, ry - 12, data.user, { 
+                    fontSize: '9px', 
+                    fill: '#00ff88',
+                    backgroundColor: '#00000088'
+                }).setOrigin(0.5);
+
+                audiences.push({ sprite: audSprite, text: nameTag });
+
+                audSprite.setScale(0);
+                sceneRef.tweens.add({ targets: audSprite, scaleX: 1, scaleY: 1, duration: 200 });
+                sceneRef.tweens.add({
+                    targets: [audSprite, nameTag],
+                    y: '-=5',
+                    duration: Phaser.Math.Between(300, 500),
+                    yoyo: true,
+                    repeat: -1,
+                    delay: Phaser.Math.Between(0, 400)
+                });
+            }
+            // 2. TẤN CÔNG
+            else if (data.type === 'ATTACK') {
                 if (data.action === 'punch') {
-                    // Hiệu ứng võ sĩ 1 lao vào đấm
                     actionText.setText(`${data.user}: TUNG CÚ ĐẤM!`);
                     sceneRef.tweens.add({
                         targets: fighter1,
                         x: 600,
                         duration: 150,
                         yoyo: true,
-                        onYoyo: () => {
-                            // Võ sĩ 2 rung lên khi trúng đòn
-                            sceneRef.cameras.main.shake(100, 0.01);
-                        }
+                        onYoyo: () => sceneRef.cameras.main.shake(100, 0.01)
                     });
                 } else if (data.action === 'kick') {
                     actionText.setText(`${data.user}: TUNG CÚ ĐÁ!`);
@@ -190,6 +200,7 @@
                     });
                 }
             } 
+            // 3. CAMERA
             else if (data.type === 'CAMERA') {
                 if (data.action === 'zoom_in') {
                     actionText.setText(`CAMERA: CẬN CẢNH!`);
@@ -197,43 +208,14 @@
                     setTimeout(() => sceneRef.cameras.main.zoomTo(1.0, 400), 1800);
                 }
             }
-            else if (data.type === 'SPAWN_AUDIENCE') {
-                actionText.setText(`${data.user} TẶNG HOA -> TẠO KHÁN GIẢ!`);
-                
-                // Spawn khán giả nhảy lên khán đài
-                let rx = Phaser.Math.Between(150, 850);
-                let ry = Phaser.Math.Between(180, 250);
-                let aud = sceneRef.add.sprite(rx, ry, 'audience_tex');
-                
-                // Thêm tên người tặng quà
-                let nameTag = sceneRef.add.text(rx, ry - 15, data.user, { fontSize: '10px', fill: '#fff' }).setOrigin(0.5);
-
-                // Hiệu ứng khán giả nhảy cổ vũ
-                sceneRef.tweens.add({
-                    targets: [aud, nameTag],
-                    y: '-=10',
-                    duration: 200,
-                    yoyo: true,
-                    repeat: -1
-                });
-            }
+            // 4. QUÀ LỚN
             else if (data.type === 'ULTIMATE') {
-                actionText.setText(`🔥 ${data.user} TẶNG QUÀ LỚN: TUNG CHIÊU TỐI THƯỢNG! 🔥`);
-                
-                // Hiệu ứng flash màn hình
-                sceneRef.cameras.main.flash(500, 255, 255, 255);
-                sceneRef.cameras.main.shake(500, 0.03);
-
-                sceneRef.tweens.add({
-                    targets: fighter1,
-                    scaleX: 1.8,
-                    scaleY: 1.8,
-                    duration: 300,
-                    yoyo: true
-                });
+                actionText.setText(`🔥 ${data.user} TẶNG QUÀ LỚN! 🔥`);
+                sceneRef.cameras.main.flash(400, 255, 255, 255);
+                sceneRef.cameras.main.shake(400, 0.03);
             }
+            // 5. THẢ TIM
             else if (data.type === 'ENVIRONMENT') {
-                // Nhấp nháy đèn sàn đấu khi thả tim
                 sceneRef.cameras.main.setBackgroundColor('#2a1a34');
                 setTimeout(() => sceneRef.cameras.main.setBackgroundColor('#1a1a24'), 150);
             }
@@ -244,7 +226,7 @@
             if (data.connected) {
                 statusBox.innerHTML = `Đã kết nối Live: @${data.username}`;
                 statusBox.classList.add('status-online');
-                log(`Đã kết nối thành công tới TikTok: @${data.username}`);
+                log(`Đã kết nối thành công TikTok Live của: @${data.username}`);
             } else {
                 statusBox.innerHTML = `Lỗi kết nối TikTok!`;
                 statusBox.classList.remove('status-online');
@@ -252,14 +234,11 @@
             }
         });
 
-        // ==========================================
-        // CÁC HÀM GỌI API TỪ UI
-        // ==========================================
         function connectTikTok() {
             const username = document.getElementById('tiktok-username').value;
             if (!username) return alert("Vui lòng nhập Username TikTok!");
 
-            log(`Đang kết nối tới TikTok: @${username}...`);
+            log(`Đang gửi yêu cầu kết nối TikTok: @${username}...`);
             fetch(`${BACKEND_URL}/api/connect-tiktok`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -271,7 +250,7 @@
             fetch(`${BACKEND_URL}/api/test-command`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type, action, user: 'Viewer_Test' })
+                body: JSON.stringify({ type, action, user: 'User_' + Math.floor(Math.random()*100) })
             });
         }
     </script>
