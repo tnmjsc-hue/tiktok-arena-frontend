@@ -48,6 +48,7 @@
         <button class="btn-test" onclick="sendTest('ATTACK', 'punch')">Võ sĩ 1 Đấm (!dam)</button>
         <button class="btn-test" onclick="sendTest('ATTACK', 'kick')">Võ sĩ 1 Đá (!da)</button>
         <button class="btn-test" onclick="sendTest('CAMERA', 'zoom_in')">Zoom Camera (!zoom)</button>
+        <button class="btn-test" onclick="sendTest('GIFT_RECEIVED', 'gift', { giftName: 'Rose', count: 1, diamondCount: 1 })">Test tặng Hoa Hồng</button>
         <button class="btn-test" onclick="sendTest('ULTIMATE', 'strike')">Quà Khủng (Kỹ năng tối thượng)</button>
 
         <label>Nhật ký sự kiện:</label>
@@ -117,9 +118,11 @@
 
         const game = new Phaser.Game(config);
 
-        let fighter1, fighter2, actionText;
+        let fighter1, fighter2, actionText, giftAnnouncement;
         let audiences = [];
         let sceneRef;
+        let giftEffectTimer = null;
+        let focusedGiftAudience = null;
 
         function preload() {
             let g = this.add.graphics();
@@ -159,7 +162,7 @@
             fighter2 = this.add.sprite(650, 440, 'fighter2_tex');
 
             // Text hiển thị hành động
-            actionText = this.add.text(500, 320, 'SẴN SÀNG ĐẤU!', { 
+            actionText = this.add.text(500, 320, 'SẴN SÀNG ĐẤU!', {
                 fontSize: '18px', 
                 fill: '#00ff88', 
                 fontWeight: 'bold',
@@ -167,10 +170,120 @@
                 padding: { x: 10, y: 5 }
             }).setOrigin(0.5);
 
+            giftAnnouncement = this.add.text(500, 75, '', {
+                fontSize: '24px',
+                fill: '#fff4a3',
+                fontWeight: 'bold',
+                stroke: '#8a3d00',
+                strokeThickness: 5,
+                backgroundColor: '#250f00dd',
+                padding: { x: 20, y: 12 },
+                align: 'center'
+            }).setOrigin(0.5).setScrollFactor(0).setDepth(1000).setAlpha(0);
+
             log("Game đã sẵn sàng!");
         }
 
         function update() {}
+
+        function addAudience(user) {
+            if (audiences.length >= 50) {
+                const oldAudience = audiences.shift();
+                oldAudience.sprite.destroy();
+                oldAudience.text.destroy();
+            }
+
+            const x = Phaser.Math.Between(150, 850);
+            const y = Phaser.Math.Between(160, 240);
+            const sprite = sceneRef.add.sprite(x, y, 'audience_tex');
+            const baseTint = Phaser.Display.Color.RandomRGB().color;
+            sprite.setTint(baseTint);
+
+            const nameTag = sceneRef.add.text(x, y - 12, user, {
+                fontSize: '9px',
+                fill: '#00ff88',
+                backgroundColor: '#00000088'
+            }).setOrigin(0.5);
+
+            const audience = { user, sprite, text: nameTag, baseTint };
+            audiences.push(audience);
+
+            sprite.setScale(0);
+            sceneRef.tweens.add({ targets: sprite, scaleX: 1, scaleY: 1, duration: 200 });
+            sceneRef.tweens.add({
+                targets: [sprite, nameTag],
+                y: '-=5',
+                duration: Phaser.Math.Between(300, 500),
+                yoyo: true,
+                repeat: -1,
+                delay: Phaser.Math.Between(0, 400)
+            });
+
+            return audience;
+        }
+
+        function findAudience(user) {
+            const normalizedUser = String(user || '').trim().toLowerCase();
+            return [...audiences].reverse().find(audience =>
+                String(audience.user || '').trim().toLowerCase() === normalizedUser
+            );
+        }
+
+        function showGiftEffect(data) {
+            let audience = findAudience(data.user);
+            if (!audience) audience = addAudience(data.user || 'Khán giả');
+
+            const camera = sceneRef.cameras.main;
+            const count = Math.max(1, Number(data.count) || 1);
+            const giftName = data.giftName || 'Món quà';
+
+            if (giftEffectTimer) giftEffectTimer.remove(false);
+            sceneRef.tweens.killTweensOf(giftAnnouncement);
+            if (focusedGiftAudience) {
+                if (focusedGiftAudience.sprite.active) {
+                    focusedGiftAudience.sprite.setTint(focusedGiftAudience.baseTint);
+                }
+                if (focusedGiftAudience.text.active) focusedGiftAudience.text.setColor('#00ff88');
+            }
+            focusedGiftAudience = audience;
+            camera.panEffect.reset();
+            camera.zoomEffect.reset();
+
+            giftAnnouncement
+                .setText(`🎁 ${data.user} tặng ${count}x ${giftName}! 🎁`)
+                .setAlpha(1)
+                .setScale(0.75);
+
+            sceneRef.tweens.add({
+                targets: giftAnnouncement,
+                scaleX: 1,
+                scaleY: 1,
+                duration: 250,
+                ease: 'Back.Out'
+            });
+
+            audience.sprite.setTint(0xffd447);
+            audience.text.setColor('#fff4a3');
+
+            camera.flash(250, 255, 220, 80);
+            camera.pan(audience.sprite.x, audience.sprite.y, 450, 'Sine.easeInOut');
+            camera.zoomTo(2.2, 450, 'Sine.easeInOut');
+
+            giftEffectTimer = sceneRef.time.delayedCall(2300, () => {
+                sceneRef.tweens.add({
+                    targets: giftAnnouncement,
+                    alpha: 0,
+                    duration: 700,
+                    ease: 'Sine.easeIn'
+                });
+                camera.pan(500, 350, 700, 'Sine.easeInOut');
+                camera.zoomTo(1, 700, 'Sine.easeInOut');
+                if (audience.sprite.active) audience.sprite.setTint(audience.baseTint);
+                if (audience.text.active) audience.text.setColor('#00ff88');
+                focusedGiftAudience = null;
+                giftEffectTimer = null;
+            });
+        }
 
         // Xử lý Lệnh từ Server gửi xuống
         socket.on('GAME_COMMAND', (data) => {
@@ -179,38 +292,7 @@
             // 1. TẠO KHÁN GIẢ MỚI
             if (data.type === 'SPAWN_AUDIENCE') {
                 actionText.setText(`${data.user} VỪA VÀO PHÒNG!`);
-                
-                // Giới hạn tối đa 50 khán giả để không bị giật lag
-                if (audiences.length >= 50) {
-                    let oldAud = audiences.shift();
-                    oldAud.sprite.destroy();
-                    oldAud.text.destroy();
-                }
-
-                let rx = Phaser.Math.Between(150, 850);
-                let ry = Phaser.Math.Between(160, 240);
-                
-                let audSprite = sceneRef.add.sprite(rx, ry, 'audience_tex');
-                audSprite.setTint(Phaser.Display.Color.RandomRGB().color);
-
-                let nameTag = sceneRef.add.text(rx, ry - 12, data.user, { 
-                    fontSize: '9px', 
-                    fill: '#00ff88',
-                    backgroundColor: '#00000088'
-                }).setOrigin(0.5);
-
-                audiences.push({ sprite: audSprite, text: nameTag });
-
-                audSprite.setScale(0);
-                sceneRef.tweens.add({ targets: audSprite, scaleX: 1, scaleY: 1, duration: 200 });
-                sceneRef.tweens.add({
-                    targets: [audSprite, nameTag],
-                    y: '-=5',
-                    duration: Phaser.Math.Between(300, 500),
-                    yoyo: true,
-                    repeat: -1,
-                    delay: Phaser.Math.Between(0, 400)
-                });
+                addAudience(data.user);
             }
             // 2. TẤN CÔNG
             else if (data.type === 'ATTACK') {
@@ -249,7 +331,11 @@
                 sceneRef.cameras.main.flash(400, 255, 255, 255);
                 sceneRef.cameras.main.shake(400, 0.03);
             }
-            // 5. THẢ TIM
+            // 5. NGƯỜI XEM TẶNG QUÀ
+            else if (data.type === 'GIFT_RECEIVED') {
+                showGiftEffect(data);
+            }
+            // 6. THẢ TIM
             else if (data.type === 'ENVIRONMENT') {
                 sceneRef.cameras.main.setBackgroundColor('#2a1a34');
                 setTimeout(() => sceneRef.cameras.main.setBackgroundColor('#1a1a24'), 150);
@@ -299,7 +385,7 @@
             });
         }
 
-        function sendTest(type, action) {
+        function sendTest(type, action, extra = {}) {
             if (!socket.connected) {
                 log('Chưa kết nối Server Render nên chưa thể gửi lệnh test.');
                 return;
@@ -308,7 +394,12 @@
             fetch(`${BACKEND_URL}/api/test-command`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type, action, user: 'User_' + Math.floor(Math.random()*100) })
+                body: JSON.stringify({
+                    type,
+                    action,
+                    user: 'User_' + Math.floor(Math.random()*100),
+                    ...extra
+                })
             }).then(async response => {
                 if (!response.ok) {
                     const data = await response.json().catch(() => ({}));
