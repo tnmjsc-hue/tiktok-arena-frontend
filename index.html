@@ -6,6 +6,7 @@
     <title>Đấu trường đẫm mỡ</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.149.0/three.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #08080c; color: #fff; min-height: 100svh; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; padding: 12px; overflow: auto; }
@@ -98,17 +99,26 @@
             #ui-panel { width: min(100%, 540px); max-height: none; overflow: visible; }
             #log-box { min-height: 180px; }
         }
-        .mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-        .mode-switch button { background: #2a2a35; color: #fff; font-size: 13px; }
+        .mode-switch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .mode-switch button { background: #2a2a35; color: #fff; font-size: 12px; }
         .mode-switch button.active { background: #00ff88; color: #000; }
         body.club-mode #fighter-gift-hud { display: none; }
         body.club-mode #stage-shell { border-color: #ff4dd8; box-shadow: 0 0 35px #ff4dd833; }
+        #stage-3d { position: absolute; inset: 0; display: none; }
+        body.club3d-mode #stage-3d { display: block; }
+        body.club3d-mode #game-container { display: none; }
+        body.club3d-mode #fighter-gift-hud { display: none; }
+        body.club3d-mode #stage-shell { border-color: #00cfff; box-shadow: 0 0 35px #00cfff33; }
+        #club3d-sign { position: absolute; z-index: 25; top: 4%; left: 50%; transform: translateX(-50%); font-size: 34px; font-weight: 900; color: #cff6ff; letter-spacing: .08em; white-space: nowrap; text-shadow: 0 0 12px #00cfff, 0 0 30px #00cfff, 0 0 60px #00cfff; display: none; pointer-events: none; }
+        body.club3d-mode #club3d-sign { display: block; }
     </style>
 </head>
 <body>
 
     <div id="stage-shell">
         <div id="game-container"></div>
+        <div id="stage-3d" aria-label="Bar Club 3D"></div>
+        <div id="club3d-sign" aria-hidden="true">🍸 CLUB 3D LIVE</div>
         <div id="gift-announcement" role="status" aria-live="polite"></div>
         <div id="fighter-gift-hud" aria-label="Quà kích hoạt động tác võ sĩ"></div>
         <div id="viewer-comment-feed" role="log" aria-live="polite" aria-label="Bình luận người xem"></div>
@@ -130,9 +140,10 @@
         <h2>TikTok Arena 2D</h2>
         <div class="mode-switch">
             <button id="mode-btn-arena" class="active" onclick="setMode('arena')">🏟 Sàn Đấu</button>
-            <button id="mode-btn-club" onclick="setMode('club')">🍸 Bar Club</button>
+            <button id="mode-btn-club" onclick="setMode('club')">🍸 Club 2D</button>
+            <button id="mode-btn-club3d" onclick="setMode('club3d')">🕹️ Club 3D</button>
         </div>
-        <div class="upload-hint">Chuyển chế độ hiển thị sân đấu / bar club. Lựa chọn được đồng bộ sang cửa sổ OBS.</div>
+        <div class="upload-hint">Chuyển chế độ hiển thị sân đấu / bar club 2D / bar club 3D. Được đồng bộ sang cửa sổ OBS.</div>
         <button class="btn-obs" onclick="openObsWindow()">↗ Mở Cửa Sổ OBS</button>
         <div class="upload-hint">Cửa sổ chỉ hiển thị sân đấu 9:16, không có bảng điều khiển.</div>
         <button class="btn-obs" onclick="togglePanelHidden()">👁 Capture Ngay (Ẩn Bảng Điều Khiển)</button>
@@ -760,13 +771,15 @@
 
         window.addEventListener('resize', () => {
             try { game.scale.refresh(); } catch {}
+            resizeClub3D();
         });
 
         // ==========================================
         // CHẾ ĐỘ HIỂN THỊ: SÀN ĐẤU / BAR CLUB (demo)
         // ==========================================
         const MODE_KEY = 'tiktok-arena-mode';
-        let currentMode = localStorage.getItem(MODE_KEY) === 'club' ? 'club' : 'arena';
+        const storedMode = localStorage.getItem(MODE_KEY);
+        let currentMode = storedMode === 'club' || storedMode === 'club3d' ? storedMode : 'arena';
         let clubLayer = null;
         let clubWorldBuilt = false;
         let clubAmbientSpawned = false;
@@ -784,48 +797,53 @@
         const CLUB_MAX_CHARACTERS = 14;
 
         function setMode(mode) {
-            if (mode !== 'arena' && mode !== 'club') return;
+            if (mode !== 'arena' && mode !== 'club' && mode !== 'club3d') return;
             if (mode === currentMode) return;
             currentMode = mode;
             try { localStorage.setItem(MODE_KEY, currentMode); } catch {}
             applyMode();
-            log(`Đã chuyển sang chế độ: ${currentMode === 'club' ? '🍸 Bar Club' : '🏟 Sàn Đấu'}`);
+            const modeLabel = currentMode === 'club' ? '🍸 Bar Club 2D' : currentMode === 'club3d' ? '🕹️ Bar Club 3D' : '🏟 Sàn Đấu';
+            log(`Đã chuyển sang chế độ: ${modeLabel}`);
         }
 
         function applyMode() {
             const isClub = currentMode === 'club';
+            const isClub3D = currentMode === 'club3d';
             document.body.classList.toggle('club-mode', isClub);
-            const btnArena = document.getElementById('mode-btn-arena');
-            const btnClub = document.getElementById('mode-btn-club');
-            if (btnArena) btnArena.classList.toggle('active', !isClub);
-            if (btnClub) btnClub.classList.toggle('active', isClub);
+            document.body.classList.toggle('club3d-mode', isClub3D);
+            [['mode-btn-arena', 'arena'], ['mode-btn-club', 'club'], ['mode-btn-club3d', 'club3d']].forEach(([id, m]) => {
+                const btn = document.getElementById(id);
+                if (btn) btn.classList.toggle('active', currentMode === m);
+            });
 
             if (!sceneRef) return;
-            if (isClub) {
-                buildClubWorld();
-                if (!clubAmbientSpawned) {
-                    clubAmbientSpawned = true;
-                    spawnAmbientClubCrowd();
+
+            // 2D arena visuals
+            const showArena = currentMode === 'arena';
+            if (arenaBackdrop) arenaBackdrop.setVisible(showArena);
+            if (fighter1) fighter1.setVisible(showArena);
+            if (fighter2) fighter2.setVisible(showArena);
+            ambientAudienceBySeat.forEach(sprite => sprite.setVisible(showArena));
+            audiences.forEach(audience => {
+                audience.sprite.setVisible(showArena);
+                audience.text.setVisible(showArena);
+            });
+            // 2D club layer
+            if (clubLayer) clubLayer.setVisible(isClub);
+            // 3D club stage
+            if (isClub3D) {
+                if (!club3DBuilt && window.THREE) buildClub3DScene();
+                if (club3DRenderer) {
+                    club3DVisible = true;
+                    resizeClub3D();
+                    club3DClock.getDelta();
+                    club3DRenderer.setAnimationLoop(club3DAnimate);
+                } else if (!window.THREE) {
+                    log('Không tải được Three.js (Club 3D cần mạng để tải thư viện).');
                 }
-                clubLayer.setVisible(true);
-                if (arenaBackdrop) arenaBackdrop.setVisible(false);
-                if (fighter1) fighter1.setVisible(false);
-                if (fighter2) fighter2.setVisible(false);
-                ambientAudienceBySeat.forEach(sprite => sprite.setVisible(false));
-                audiences.forEach(audience => {
-                    audience.sprite.setVisible(false);
-                    audience.text.setVisible(false);
-                });
             } else {
-                if (clubLayer) clubLayer.setVisible(false);
-                if (arenaBackdrop) arenaBackdrop.setVisible(true);
-                if (fighter1) fighter1.setVisible(true);
-                if (fighter2) fighter2.setVisible(true);
-                ambientAudienceBySeat.forEach(sprite => sprite.setVisible(true));
-                audiences.forEach(audience => {
-                    audience.sprite.setVisible(true);
-                    audience.text.setVisible(true);
-                });
+                club3DVisible = false;
+                if (club3DRenderer) club3DRenderer.setAnimationLoop(null);
             }
             sceneRef.cameras.main.zoomTo(1, 250);
             try { game.scale.refresh(); } catch {}
@@ -833,7 +851,7 @@
 
         window.addEventListener('storage', event => {
             if (event.key !== MODE_KEY) return;
-            const next = event.newValue === 'club' ? 'club' : 'arena';
+            const next = event.newValue === 'club' || event.newValue === 'club3d' ? event.newValue : 'arena';
             if (next !== currentMode) {
                 currentMode = next;
                 applyMode();
@@ -1027,6 +1045,437 @@
             sceneRef.time.delayedCall(1000, () => {
                 if (currentMode === 'club') sceneRef.cameras.main.zoomTo(1, 500, 'Sine.easeInOut');
             });
+        }
+
+        // ==========================================
+        // BAR CLUB 3D (demo — Three.js, low-poly)
+        // ==========================================
+        let club3DBuilt = false;
+        let club3DVisible = false;
+        let club3DRenderer = null;
+        let club3DScene = null;
+        let club3DCamera = null;
+        let club3DClock = null;
+        let club3DTime = 0;
+        let club3DCharacters = [];
+        let club3DSpotIndex = 0;
+        const club3DTweens = [];
+        const CLUB3D_SPOTS = Object.freeze([
+            { x: -1.2, z: 1.1 }, { x: -0.4, z: 1.4 }, { x: 0.4, z: 1.4 }, { x: 1.2, z: 1.1 },
+            { x: -1.6, z: 0.25 }, { x: 1.6, z: 0.25 }, { x: -0.9, z: -0.3 }, { x: 0.9, z: -0.3 },
+            { x: -1.1, z: -1.15 }, { x: 1.1, z: -1.15 }, { x: -2.25, z: 0.7 }, { x: 2.25, z: 0.7 },
+            { x: 0, z: 1.0 }, { x: -0.6, z: -0.9 }, { x: 0.6, z: -0.9 }, { x: -2.3, z: -1.0 }
+        ]);
+        const CLUB3D_MAX_CHARACTERS = 14;
+
+        function buildClub3DScene() {
+            if (!window.THREE || club3DBuilt) return;
+            club3DBuilt = true;
+            club3DTime = 0;
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.domElement.style.width = '100%';
+            renderer.domElement.style.height = '100%';
+            renderer.domElement.style.display = 'block';
+            club3DRenderer = renderer;
+            document.getElementById('stage-3d').appendChild(renderer.domElement);
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b0710);
+            scene.fog = new THREE.Fog(0x0b0710, 9, 20);
+            club3DScene = scene;
+
+            const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 40);
+            camera.position.set(0, 2.4, 5.6);
+            camera.lookAt(0, 1.3, -0.5);
+            club3DCamera = camera;
+
+            club3DClock = new THREE.Clock();
+
+            // Ánh sáng
+            scene.add(new THREE.AmbientLight(0x554e6e, 0.5));
+            const key = new THREE.DirectionalLight(0xfff0ff, 0.85);
+            key.position.set(3, 6, 4);
+            key.castShadow = true;
+            key.shadow.mapSize.set(1024, 1024);
+            key.shadow.camera.left = -5;
+            key.shadow.camera.right = 5;
+            key.shadow.camera.top = 5;
+            key.shadow.camera.bottom = -5;
+            scene.add(key);
+            const p1 = new THREE.PointLight(0xff4dd8, 20, 12);
+            p1.position.set(-1.8, 3.4, 1.2);
+            scene.add(p1);
+            const p2 = new THREE.PointLight(0x00cfff, 20, 12);
+            p2.position.set(1.8, 3.4, 1.2);
+            scene.add(p2);
+            const p3 = new THREE.PointLight(0x00ff9d, 14, 10);
+            p3.position.set(0, 3.6, 0.8);
+            scene.add(p3);
+            const barSpot = new THREE.PointLight(0xffd166, 12, 9);
+            barSpot.position.set(2.3, 1.6, 1.6);
+            scene.add(barSpot);
+
+            // Sàn
+            const floor = new THREE.Mesh(
+                new THREE.PlaneGeometry(16, 16),
+                new THREE.MeshStandardMaterial({ color: 0x14101f, roughness: 0.95 })
+            );
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // Sàn nhảy (disc phát sáng)
+            const danceFloor = new THREE.Mesh(
+                new THREE.CylinderGeometry(1.9, 2.0, 0.06, 40),
+                new THREE.MeshStandardMaterial({ color: 0x1c1230, roughness: 0.5, emissive: 0x1a0a2a, emissiveIntensity: 0.7 })
+            );
+            danceFloor.position.y = 0.03;
+            danceFloor.receiveShadow = true;
+            scene.add(danceFloor);
+
+            const ring = new THREE.Mesh(
+                new THREE.RingGeometry(1.92, 2.05, 48),
+                new THREE.MeshBasicMaterial({ color: 0xff4dd8 })
+            );
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.y = 0.07;
+            scene.add(ring);
+
+            // Ô đèn sàn nhảy
+            for (let i = 0; i < 24; i++) {
+                const a = (i / 24) * Math.PI * 2;
+                const tile = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.22, 0.02, 0.22),
+                    new THREE.MeshBasicMaterial({ color: CLUB_PALETTE[i % CLUB_PALETTE.length] })
+                );
+                tile.position.set(Math.cos(a) * 1.25, 0.07, Math.sin(a) * 1.25);
+                scene.add(tile);
+            }
+
+            // Tường sau + trần
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x191228, roughness: 0.95 });
+            const backWall = new THREE.Mesh(new THREE.BoxGeometry(10, 4.2, 0.4), wallMat);
+            backWall.position.set(0, 2.1, -3.6);
+            scene.add(backWall);
+            const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 4.2, 8), wallMat);
+            leftWall.position.set(-3.6, 2.1, 0);
+            scene.add(leftWall);
+            const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 4.2, 8), wallMat);
+            rightWall.position.set(3.6, 2.1, 0);
+            scene.add(rightWall);
+            const ceiling = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.4, 7.6), wallMat);
+            ceiling.position.set(0, 3.9, 0);
+            scene.add(ceiling);
+            // Neon trên trần
+            for (let i = 0; i < 10; i++) {
+                const strip = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.5, 0.05, 0.05),
+                    new THREE.MeshBasicMaterial({ color: CLUB_PALETTE[i % CLUB_PALETTE.length] })
+                );
+                strip.position.set(-3 + i * 0.67, 3.82, -1.4);
+                scene.add(strip);
+            }
+
+            // Quầy bar (bên phải)
+            const barMat = new THREE.MeshStandardMaterial({ color: 0x2a1838, roughness: 0.6 });
+            const counter = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.9, 0.8), barMat);
+            counter.position.set(2.6, 0.45, -0.8);
+            counter.castShadow = true;
+            scene.add(counter);
+            const counterTop = new THREE.Mesh(
+                new THREE.BoxGeometry(2.0, 0.1, 0.9),
+                new THREE.MeshStandardMaterial({ color: 0x3a2150, roughness: 0.4 })
+            );
+            counterTop.position.set(2.6, 0.95, -0.8);
+            scene.add(counterTop);
+            const barEdge = new THREE.Mesh(
+                new THREE.BoxGeometry(2.05, 0.06, 0.06),
+                new THREE.MeshBasicMaterial({ color: 0x00ff9d })
+            );
+            barEdge.position.set(2.6, 1.0, -1.25);
+            scene.add(barEdge);
+            // Ghế quầy
+            for (let i = 0; i < 3; i++) {
+                const stool = new THREE.Group();
+                stool.add(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.5, 8), barMat));
+                const seat = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.22, 0.22, 0.08, 10),
+                    new THREE.MeshStandardMaterial({ color: CLUB_PALETTE[i % CLUB_PALETTE.length], roughness: 0.5 })
+                );
+                seat.position.y = 0.29;
+                stool.add(seat);
+                stool.position.set(2.6, 0, 0.35 + i * 0.55);
+                scene.add(stool);
+            }
+
+            // Booth DJ (bên trái)
+            const djTable = new THREE.Mesh(
+                new THREE.BoxGeometry(1.7, 0.8, 0.7),
+                new THREE.MeshStandardMaterial({ color: 0x1d1233, roughness: 0.6 })
+            );
+            djTable.position.set(-2.6, 0.4, -0.9);
+            djTable.castShadow = true;
+            scene.add(djTable);
+            for (const [dx, color] of [[-0.35, 0xff4dd8], [0, 0x00cfff], [0.35, 0xffd166]]) {
+                const disc = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.26, 0.26, 0.06, 20),
+                    new THREE.MeshBasicMaterial({ color })
+                );
+                disc.position.set(-2.6 + dx, 0.83, -0.9);
+                scene.add(disc);
+            }
+
+            // Bàn ghế góc trước
+            for (let i = 0; i < 2; i++) {
+                const table = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.35, 0.42, 0.55, 10),
+                    new THREE.MeshStandardMaterial({ color: 0x241631, roughness: 0.7 })
+                );
+                table.position.set(i === 0 ? -2.3 : 2.3, 0.28, 1.9);
+                scene.add(table);
+                const seatL = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.6, 0.42, 0.5),
+                    new THREE.MeshStandardMaterial({ color: CLUB_PALETTE[(i * 3) % CLUB_PALETTE.length], roughness: 0.6 })
+                );
+                seatL.position.set(i === 0 ? -2.85 : 1.85, 0.21, 1.9);
+                scene.add(seatL);
+                const seatR = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.6, 0.42, 0.5),
+                    new THREE.MeshStandardMaterial({ color: CLUB_PALETTE[(i * 3 + 1) % CLUB_PALETTE.length], roughness: 0.6 })
+                );
+                seatR.position.set(i === 0 ? -1.75 : 2.75, 0.21, 1.9);
+                scene.add(seatR);
+            }
+
+            buildClub3DCrowd();
+        }
+
+        function buildClub3DCrowd() {
+            const scene = club3DScene;
+            const bodyGeo = new THREE.BoxGeometry(0.34, 0.95, 0.22);
+            const headGeo = new THREE.SphereGeometry(0.15, 6, 5);
+            const bodyMat = new THREE.MeshStandardMaterial({ roughness: 0.8 });
+            const headMat = new THREE.MeshStandardMaterial({ color: 0xd9a37a, roughness: 0.9 });
+            const count = 36;
+            const bodies = new THREE.InstancedMesh(bodyGeo, bodyMat, count);
+            const heads = new THREE.InstancedMesh(headGeo, headMat, count);
+            const dummy = new THREE.Object3D();
+            for (let i = 0; i < count; i++) {
+                const a = (i / count) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.15, 0.15);
+                const r = Phaser.Math.FloatBetween(2.15, 3.3);
+                const x = Math.cos(a) * r;
+                const z = Math.sin(a) * r;
+                dummy.position.set(x, 0.55, z);
+                dummy.rotation.y = -a + Math.PI;
+                dummy.scale.setScalar(Phaser.Math.FloatBetween(0.85, 1.15));
+                dummy.updateMatrix();
+                bodies.setMatrixAt(i, dummy.matrix);
+                dummy.position.y = 1.15;
+                dummy.updateMatrix();
+                heads.setMatrixAt(i, dummy.matrix);
+                bodies.setColorAt(i, new THREE.Color().setHSL(Phaser.Math.FloatBetween(0, 1), 0.55, 0.45));
+            }
+            bodies.instanceMatrix.needsUpdate = true;
+            heads.instanceMatrix.needsUpdate = true;
+            scene.add(bodies, heads);
+        }
+
+        function buildClub3DPerson() {
+            const skin = new THREE.MeshStandardMaterial({ color: 0xffd9a0, roughness: 0.85 });
+            const hairColors = [0x3a2a1a, 0x16161e, 0xc98f3a, 0x7a3a1a, 0x1a1a2a];
+            const hair = new THREE.MeshStandardMaterial({ color: hairColors[Phaser.Math.Between(0, hairColors.length - 1)], roughness: 0.9 });
+            const shirt = new THREE.MeshStandardMaterial({ color: CLUB_PALETTE[Phaser.Math.Between(0, CLUB_PALETTE.length - 1)], roughness: 0.6 });
+            const pants = new THREE.MeshStandardMaterial({ color: 0x23233f, roughness: 0.85 });
+
+            const group = new THREE.Group();
+
+            const legGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.8, 6);
+            const legLP = new THREE.Group();
+            legLP.position.set(-0.12, 0, 0);
+            const legL = new THREE.Mesh(legGeo, pants);
+            legL.position.y = -0.4;
+            legLP.add(legL);
+            const legRP = new THREE.Group();
+            legRP.position.set(0.12, 0, 0);
+            const legR = new THREE.Mesh(legGeo, pants);
+            legR.position.y = -0.4;
+            legRP.add(legR);
+            group.add(legLP, legRP);
+
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.56, 0.24), shirt);
+            torso.position.y = 0.62;
+            group.add(torso);
+
+            const armGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.6, 6);
+            const armLP = new THREE.Group();
+            armLP.position.set(-0.29, 0.9, 0);
+            const armL = new THREE.Mesh(armGeo, shirt);
+            armL.position.y = -0.3;
+            armLP.add(armL);
+            const armRP = new THREE.Group();
+            armRP.position.set(0.29, 0.9, 0);
+            const armR = new THREE.Mesh(armGeo, shirt);
+            armR.position.y = -0.3;
+            armRP.add(armR);
+            group.add(armLP, armRP);
+
+            const headP = new THREE.Group();
+            headP.position.y = 1.08;
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.27, 0.27), skin);
+            head.position.y = 0.12;
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x141420 });
+            const eyeGeo = new THREE.BoxGeometry(0.04, 0.06, 0.02);
+            const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeL.position.set(-0.06, 0.04, 0.14);
+            const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeR.position.set(0.06, 0.04, 0.14);
+            head.add(eyeL, eyeR);
+            const hairCap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.09, 0.3), hair);
+            hairCap.position.y = 0.18;
+            head.add(hairCap);
+            headP.add(head);
+            group.add(headP);
+
+            group.traverse(obj => {
+                if (obj.isMesh) obj.castShadow = true;
+            });
+            return { group, legLP, legRP, armLP, armRP, headP };
+        }
+
+        function makeClub3DNameSprite(user) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.beginPath();
+            ctx.roundRect(4, 8, 248, 48, 20);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 30px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(user || 'Khán giả').slice(0, 18), 128, 34);
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+                map: new THREE.CanvasTexture(canvas),
+                transparent: true,
+                depthTest: false
+            }));
+            sprite.scale.set(1.1, 0.28, 1);
+            sprite.position.y = 2.05;
+            return sprite;
+        }
+
+        function addClub3DTween(obj, prop, from, to, durMs, easeIn, onDone) {
+            club3DTweens.push({ obj, prop, from, to, dur: durMs, elapsed: 0, easeIn: !!easeIn, onDone });
+        }
+
+        function club3DAnimate() {
+            if (!club3DVisible || !club3DRenderer) return;
+            const dt = club3DClock.getDelta();
+            club3DTime += dt;
+
+            for (const c of club3DCharacters) {
+                const g = c.group;
+                const speed = c.mode === 'dance' ? 3.2 : 0.9;
+                const s = Math.sin(club3DTime * speed + c.phase);
+                c.armLP.rotation.z = c.mode === 'dance' ? 0.5 * s + 0.35 : 0.12 * s;
+                c.armRP.rotation.z = c.mode === 'dance' ? -0.5 * s - 0.35 : -0.12 * s;
+                const bob = Math.abs(Math.sin(club3DTime * speed * 1.4 + c.phase));
+                g.position.y = c.baseY + (c.jumpY || 0) + bob * (c.mode === 'dance' ? 0.09 : 0.02);
+                g.rotation.y = c.mode === 'dance' ? Math.sin(club3DTime * 0.9 + c.phase) * 0.5 : 0;
+
+                if (c.mode === 'walkin') {
+                    const k = Math.min(1, c.walkProgress += dt * 1.1);
+                    const e = 1 - Math.pow(1 - k, 3);
+                    g.position.x = c.walkFromX + (c.spot.x - c.walkFromX) * e;
+                    g.position.z = c.walkFromZ + (c.spot.z - c.walkFromZ) * e;
+                    if (k >= 1) c.mode = 'dance';
+                }
+            }
+
+            for (let i = club3DTweens.length - 1; i >= 0; i--) {
+                const tw = club3DTweens[i];
+                tw.elapsed += dt * 1000;
+                const k = Math.min(1, tw.elapsed / tw.dur);
+                const e = tw.easeIn ? 1 - Math.pow(1 - k, 3) : k;
+                tw.obj[tw.prop] = tw.from + (tw.to - tw.from) * e;
+                if (k >= 1) {
+                    if (tw.onDone) tw.onDone();
+                    club3DTweens.splice(i, 1);
+                }
+            }
+
+            club3DCamera.lookAt(0, 1.25, -0.5);
+            club3DRenderer.render(club3DScene, club3DCamera);
+        }
+
+        function resizeClub3D() {
+            if (!club3DRenderer || !club3DCamera) return;
+            const container = document.getElementById('stage-3d');
+            const w = container.clientWidth || 540;
+            const h = container.clientHeight || 960;
+            club3DRenderer.setSize(w, h, false);
+            club3DCamera.aspect = w / h;
+            club3DCamera.updateProjectionMatrix();
+        }
+
+        function club3DSpawnViewer(user) {
+            if (!club3DVisible || !club3DRenderer) return;
+            while (club3DCharacters.length >= CLUB3D_MAX_CHARACTERS) {
+                const oldest = club3DCharacters.shift();
+                club3DScene.remove(oldest.group);
+                oldest.group.traverse(obj => {
+                    if (obj.material) {
+                        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                        else obj.material.dispose();
+                    }
+                    if (obj.geometry) obj.geometry.dispose();
+                });
+            }
+            const spot = CLUB3D_SPOTS[club3DSpotIndex % CLUB3D_SPOTS.length];
+            club3DSpotIndex += 1;
+            const person = buildClub3DPerson();
+            person.group.position.set(-3, 0, spot.z);
+            person.baseY = 0;
+            person.jumpY = 0;
+            person.spot = spot;
+            person.mode = 'walkin';
+            person.walkFromX = -3;
+            person.walkFromZ = spot.z;
+            person.walkProgress = 0;
+            person.phase = Math.random() * Math.PI * 2;
+            person.user = String(user || '').trim();
+            person.group.add(makeClub3DNameSprite(user));
+            club3DScene.add(person.group);
+            club3DCharacters.push(person);
+        }
+
+        function club3DReactComment(user, comment) {
+            if (!club3DVisible || !club3DCharacters.length) return;
+            const c = Phaser.Math.RND.pick(club3DCharacters);
+            addClub3DTween(c.headP.rotation, 'x', 0, -0.4, 170, true);
+            addClub3DTween(c.headP.rotation, 'x', -0.4, 0, 260, false);
+        }
+
+        function club3DReactGift(user, giftName) {
+            if (!club3DVisible || !club3DRenderer) return;
+            const target = club3DCharacters.find(c => c.user === String(user || '').trim())
+                || Phaser.Math.RND.pick(club3DCharacters);
+            if (target) {
+                addClub3DTween(target.group.rotation, 'y', target.group.rotation.y, target.group.rotation.y + Math.PI * 2, 600, false);
+                addClub3DTween(target, 'jumpY', 0, 0.5, 220, true, () => {
+                    addClub3DTween(target, 'jumpY', 0.5, 0, 280, true);
+                });
+            }
+            addClub3DTween(club3DCamera.position, 'z', 5.6, 4.1, 450, true, () => {
+                addClub3DTween(club3DCamera.position, 'z', 4.1, 5.6, 700, false);
+            });
+            showNewsAlert('QUÀ TẶNG 3D', `🎁 ${user} tặng ${giftName || 'món quà'}!`, 2600, 2);
         }
 
         const giftAnnouncement = document.getElementById('gift-announcement');
@@ -1465,9 +1914,12 @@
             if (data.type === 'VIEWER_COMMENT') {
                 showViewerComment(data.user, data.comment);
                 if (currentMode === 'club') clubReactComment(data.user, data.comment);
+                else if (currentMode === 'club3d') club3DReactComment(data.user, data.comment);
             } else if (data.type === 'SPAWN_AUDIENCE') {
                 if (currentMode === 'club') {
                     clubSpawnViewer(data.user);
+                } else if (currentMode === 'club3d') {
+                    club3DSpawnViewer(data.user);
                 } else {
                     addAudience(data.user);
                 }
@@ -1502,6 +1954,8 @@
             else if (data.type === 'ULTIMATE') {
                 if (currentMode === 'club') {
                     clubReactGift(data.user || 'Khán giả', data.giftName || 'Quà lớn');
+                } else if (currentMode === 'club3d') {
+                    club3DReactGift(data.user || 'Khán giả', data.giftName || 'Quà lớn');
                 } else {
                     log('Đã nhận tín hiệu quà lớn, chờ banner quà hoàn tất...');
                 }
@@ -1510,6 +1964,8 @@
             else if (data.type === 'GIFT_RECEIVED') {
                 if (currentMode === 'club') {
                     clubReactGift(data.user || 'Khán giả', data.giftName);
+                } else if (currentMode === 'club3d') {
+                    club3DReactGift(data.user || 'Khán giả', data.giftName);
                 } else {
                     showGiftEffect(data);
                 }
