@@ -8,9 +8,14 @@
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #111; color: #fff; overflow: hidden; display: flex; height: 100vh; }
-        #game-container { flex: 1; height: 100%; position: relative; }
-        #ui-panel { width: 320px; background: #1e1e24; padding: 20px; border-left: 2px solid #333; display: flex; flex-direction: column; gap: 12px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #08080c; color: #fff; min-height: 100svh; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; padding: 12px; overflow: auto; }
+        #stage-shell { position: relative; width: min(calc((100svh - 24px) * 9 / 16), calc(100vw - 356px)); aspect-ratio: 9 / 16; justify-self: center; align-self: center; overflow: hidden; border: 2px solid #00ff88; border-radius: 14px; background: #11131d; box-shadow: 0 0 35px #00ff8833; }
+        #game-container { position: absolute; inset: 0; }
+        #game-container canvas { width: 100% !important; height: 100% !important; display: block; }
+        #gift-announcement { position: absolute; z-index: 20; top: 4%; left: 50%; width: 88%; padding: 12px 14px; border: 2px solid #ffd447; border-radius: 12px; background: linear-gradient(135deg, #2d1300ee, #7a3300ee); color: #fff4a3; box-shadow: 0 0 24px #ffd447aa; font-size: clamp(14px, 2.2vw, 24px); font-weight: 800; text-align: center; pointer-events: none; opacity: 0; transform: translate(-50%, -12px) scale(.82); transition: opacity .25s ease, transform .25s cubic-bezier(.2, 1.4, .4, 1); }
+        #gift-announcement.gift-visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
+        #gift-announcement.gift-fading { opacity: 0; transform: translate(-50%, -18px) scale(1.03); transition-duration: .7s; }
+        #ui-panel { width: 320px; max-height: calc(100svh - 24px); background: #1e1e24; padding: 20px; border: 1px solid #333; border-radius: 12px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
         h2 { color: #00ff88; font-size: 16px; text-transform: uppercase; }
         .form-group { display: flex; flex-direction: column; gap: 6px; }
         label { font-size: 12px; color: #aaa; }
@@ -24,11 +29,20 @@
         #status-box { padding: 8px; background: #2a2a35; border-radius: 6px; font-size: 12px; border-left: 4px solid #ff4444; }
         .status-online { border-left-color: #00ff88 !important; }
         #log-box { flex: 1; background: #0d0d11; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; overflow-y: auto; color: #00ff88; }
+        @media (max-width: 850px) {
+            body { display: flex; flex-direction: column; align-items: center; padding: 8px; gap: 10px; }
+            #stage-shell { width: min(100%, calc((100svh - 16px) * 9 / 16)); flex: 0 0 auto; }
+            #ui-panel { width: min(100%, 540px); max-height: none; overflow: visible; }
+            #log-box { min-height: 180px; }
+        }
     </style>
 </head>
 <body>
 
-    <div id="game-container"></div>
+    <div id="stage-shell">
+        <div id="game-container"></div>
+        <div id="gift-announcement" role="status" aria-live="polite"></div>
+    </div>
 
     <div id="ui-panel">
         <h2>TikTok Arena 2D</h2>
@@ -110,18 +124,24 @@
         const config = {
             type: Phaser.AUTO,
             parent: 'game-container',
-            width: 1000,
-            height: 700,
             backgroundColor: '#1a1a24',
+            scale: {
+                mode: Phaser.Scale.FIT,
+                autoCenter: Phaser.Scale.CENTER_BOTH,
+                width: 540,
+                height: 960
+            },
             scene: { preload, create, update }
         };
 
         const game = new Phaser.Game(config);
 
-        let fighter1, fighter2, actionText, giftAnnouncement;
+        const giftAnnouncement = document.getElementById('gift-announcement');
+        let fighter1, fighter2, actionText;
         let audiences = [];
         let sceneRef;
         let giftEffectTimer = null;
+        let giftCleanupTimer = null;
         let focusedGiftAudience = null;
 
         function preload() {
@@ -149,37 +169,39 @@
         function create() {
             sceneRef = this;
 
-            // Sàn đấu Võ
-            let ring = this.add.rectangle(500, 480, 700, 220, 0x2a2a38);
-            ring.setStrokeStyle(4, 0x00ff88);
+            // Toàn bộ sân khấu nằm trong một khung dọc 9:16.
+            const stage = this.add.rectangle(270, 480, 516, 924, 0x11131d);
+            stage.setStrokeStyle(3, 0x334155);
 
-            // Khán đài phía sau
-            this.add.rectangle(500, 200, 800, 160, 0x15151e);
-            this.add.text(420, 130, 'KHÁN ĐÀI', { fill: '#333', fontSize: '28px', fontWeight: 'bold' });
+            // Khán đài nhiều tầng phía sau.
+            this.add.rectangle(270, 278, 480, 350, 0x151827);
+            this.add.rectangle(270, 205, 464, 78, 0x202538);
+            this.add.rectangle(270, 295, 464, 78, 0x1c2132);
+            this.add.rectangle(270, 385, 464, 78, 0x181d2c);
+            this.add.text(270, 82, 'KHÁN ĐÀI LIVE', {
+                fill: '#5ee7a8',
+                fontSize: '25px',
+                fontWeight: 'bold',
+                letterSpacing: 2
+            }).setOrigin(0.5);
+
+            // Sàn đấu võ.
+            const ring = this.add.rectangle(270, 675, 460, 270, 0x2a2a38);
+            ring.setStrokeStyle(4, 0x00ff88);
+            this.add.rectangle(270, 805, 480, 18, 0x00aa66);
 
             // Hai Võ sĩ
-            fighter1 = this.add.sprite(350, 440, 'fighter1_tex');
-            fighter2 = this.add.sprite(650, 440, 'fighter2_tex');
+            fighter1 = this.add.sprite(175, 675, 'fighter1_tex');
+            fighter2 = this.add.sprite(365, 675, 'fighter2_tex');
 
             // Text hiển thị hành động
-            actionText = this.add.text(500, 320, 'SẴN SÀNG ĐẤU!', {
-                fontSize: '18px', 
-                fill: '#00ff88', 
+            actionText = this.add.text(270, 505, 'SẴN SÀNG ĐẤU!', {
+                fontSize: '18px',
+                fill: '#00ff88',
                 fontWeight: 'bold',
                 backgroundColor: '#000000aa',
                 padding: { x: 10, y: 5 }
             }).setOrigin(0.5);
-
-            giftAnnouncement = this.add.text(500, 75, '', {
-                fontSize: '24px',
-                fill: '#fff4a3',
-                fontWeight: 'bold',
-                stroke: '#8a3d00',
-                strokeThickness: 5,
-                backgroundColor: '#250f00dd',
-                padding: { x: 20, y: 12 },
-                align: 'center'
-            }).setOrigin(0.5).setScrollFactor(0).setDepth(1000).setAlpha(0);
 
             log("Game đã sẵn sàng!");
         }
@@ -193,8 +215,9 @@
                 oldAudience.text.destroy();
             }
 
-            const x = Phaser.Math.Between(150, 850);
-            const y = Phaser.Math.Between(160, 240);
+            const x = Phaser.Math.Between(65, 475);
+            const audienceRow = Phaser.Math.Between(0, 2);
+            const y = 205 + (audienceRow * 90) + Phaser.Math.Between(-22, 22);
             const sprite = sceneRef.add.sprite(x, y, 'audience_tex');
             const baseTint = Phaser.Display.Color.RandomRGB().color;
             sprite.setTint(baseTint);
@@ -238,7 +261,7 @@
             const giftName = data.giftName || 'Món quà';
 
             if (giftEffectTimer) giftEffectTimer.remove(false);
-            sceneRef.tweens.killTweensOf(giftAnnouncement);
+            if (giftCleanupTimer) giftCleanupTimer.remove(false);
             if (focusedGiftAudience) {
                 if (focusedGiftAudience.sprite.active) {
                     focusedGiftAudience.sprite.setTint(focusedGiftAudience.baseTint);
@@ -249,18 +272,10 @@
             camera.panEffect.reset();
             camera.zoomEffect.reset();
 
-            giftAnnouncement
-                .setText(`🎁 ${data.user} tặng ${count}x ${giftName}! 🎁`)
-                .setAlpha(1)
-                .setScale(0.75);
-
-            sceneRef.tweens.add({
-                targets: giftAnnouncement,
-                scaleX: 1,
-                scaleY: 1,
-                duration: 250,
-                ease: 'Back.Out'
-            });
+            giftAnnouncement.classList.remove('gift-visible', 'gift-fading');
+            giftAnnouncement.textContent = `🎁 ${data.user} tặng ${count}x ${giftName}! 🎁`;
+            void giftAnnouncement.offsetWidth;
+            giftAnnouncement.classList.add('gift-visible');
 
             audience.sprite.setTint(0xffd447);
             audience.text.setColor('#fff4a3');
@@ -270,18 +285,18 @@
             camera.zoomTo(2.2, 450, 'Sine.easeInOut');
 
             giftEffectTimer = sceneRef.time.delayedCall(2300, () => {
-                sceneRef.tweens.add({
-                    targets: giftAnnouncement,
-                    alpha: 0,
-                    duration: 700,
-                    ease: 'Sine.easeIn'
-                });
-                camera.pan(500, 350, 700, 'Sine.easeInOut');
+                giftAnnouncement.classList.add('gift-fading');
+                camera.pan(270, 480, 700, 'Sine.easeInOut');
                 camera.zoomTo(1, 700, 'Sine.easeInOut');
                 if (audience.sprite.active) audience.sprite.setTint(audience.baseTint);
                 if (audience.text.active) audience.text.setColor('#00ff88');
                 focusedGiftAudience = null;
                 giftEffectTimer = null;
+            });
+
+            giftCleanupTimer = sceneRef.time.delayedCall(3000, () => {
+                giftAnnouncement.classList.remove('gift-visible', 'gift-fading');
+                giftCleanupTimer = null;
             });
         }
 
@@ -300,7 +315,7 @@
                     actionText.setText(`${data.user}: TUNG CÚ ĐẤM!`);
                     sceneRef.tweens.add({
                         targets: fighter1,
-                        x: 600,
+                        x: 340,
                         duration: 150,
                         yoyo: true,
                         onYoyo: () => sceneRef.cameras.main.shake(100, 0.01)
@@ -309,7 +324,7 @@
                     actionText.setText(`${data.user}: TUNG CÚ ĐÁ!`);
                     sceneRef.tweens.add({
                         targets: fighter1,
-                        x: 620,
+                        x: 355,
                         angle: -20,
                         duration: 200,
                         yoyo: true,
