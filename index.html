@@ -160,7 +160,7 @@
         const game = new Phaser.Game(config);
 
         const giftAnnouncement = document.getElementById('gift-announcement');
-        let fighter1, fighter2, actionText;
+        let fighter1, fighter2;
         let audiences = [];
         let sceneRef;
         let giftEffectTimer = null;
@@ -174,7 +174,7 @@
         let pendingFinisher = null;
         let finisherSequence = 0;
 
-        const FIGHTER_HOME = Object.freeze({ blue: 155, red: 385 });
+        const FIGHTER_HOME = Object.freeze({ blue: 180, red: 360 });
         const CUSTOM_FIGHTER_DB = 'tiktok-arena-fighter-designs';
 
         const FIGHTER_FRAME = Object.freeze({
@@ -233,21 +233,12 @@
             this.add.rectangle(270, 805, 480, 18, 0x00aa66);
 
             // Hai Võ sĩ
-            fighter1 = this.add.sprite(155, 805, 'fighter_blue', FIGHTER_FRAME.idle)
+            fighter1 = this.add.sprite(FIGHTER_HOME.blue, 805, 'fighter_blue', FIGHTER_FRAME.idle)
                 .setOrigin(0.5, 0.88)
                 .setScale(0.58);
-            fighter2 = this.add.sprite(385, 805, 'fighter_red', FIGHTER_FRAME.idle)
+            fighter2 = this.add.sprite(FIGHTER_HOME.red, 805, 'fighter_red', FIGHTER_FRAME.idle)
                 .setOrigin(0.5, 0.88)
                 .setScale(0.58);
-
-            // Text hiển thị hành động
-            actionText = this.add.text(270, 505, 'SẴN SÀNG ĐẤU!', {
-                fontSize: '18px',
-                fill: '#00ff88',
-                fontWeight: 'bold',
-                backgroundColor: '#000000aa',
-                padding: { x: 10, y: 5 }
-            }).setOrigin(0.5);
 
             log("Game đã sẵn sàng!");
             scheduleSparring(900);
@@ -331,14 +322,13 @@
             const defensePose = Phaser.Math.RND.pick(['block', 'dodge', 'hit']);
             sparringTurn += 1;
 
-            actionText.setText(`${blueAttacks ? 'XANH' : 'ĐỎ'} ${attackPose === 'punch' ? 'ĐẤM' : 'ĐÁ'} • ${defensePose === 'block' ? 'ĐỠ' : defensePose === 'dodge' ? 'NÉ' : 'TRÚNG'}`);
             playPose(attacker, attackPose, 620);
             playPose(defender, defensePose, 620);
             if (defensePose === 'hit') defender.setTint(0xffc2c2);
 
             sceneRef.tweens.add({
                 targets: attacker,
-                x: attacker.x + (direction * 48),
+                x: attacker.x + (direction * 65),
                 duration: 190,
                 yoyo: true,
                 ease: 'Sine.easeInOut',
@@ -364,9 +354,6 @@
             const attacker = side === 'red' ? fighter2 : fighter1;
             const defender = side === 'red' ? fighter1 : fighter2;
             const direction = side === 'red' ? -1 : 1;
-            const sideName = side === 'red' ? 'ĐỎ' : 'XANH';
-            const attackName = action === 'energy' ? 'TUNG CHƯỞNG' : action === 'kick' ? 'ĐÁ KẾT LIỄU' : 'ĐẤM KẾT LIỄU';
-            actionText.setText(`${user}: ${sideName} ${attackName}!`);
             playPose(attacker, action, 1050);
 
             const knockDown = () => playHitReaction(defender, true);
@@ -375,7 +362,7 @@
             } else {
                 sceneRef.tweens.add({
                     targets: attacker,
-                    x: attacker.x + (direction * 72),
+                    x: attacker.x + (direction * 85),
                     duration: 220,
                     yoyo: true,
                     onYoyo: knockDown
@@ -387,7 +374,6 @@
                 resetFighters();
                 combatLocked = false;
                 finisherTimer = null;
-                actionText.setText('TIẾP TỤC GIAO ĐẤU!');
                 scheduleSparring(650);
             });
         }
@@ -506,11 +492,10 @@
         // Xử lý Lệnh từ Server gửi xuống
         socket.on('GAME_COMMAND', (data) => {
             log(`${data.type} - ${data.action || ''} (${data.user || ''})`);
-            if (!sceneRef || !actionText) return;
+            if (!sceneRef) return;
 
             // 1. TẠO KHÁN GIẢ MỚI
             if (data.type === 'SPAWN_AUDIENCE') {
-                if (!combatLocked) actionText.setText(`${data.user} VỪA VÀO PHÒNG!`);
                 addAudience(data.user);
             }
             // 2. ACTION/COMMENT KẾT LIỄU
@@ -520,10 +505,8 @@
             // 3. PHÒNG THỦ
             else if (data.type === 'DEFENSE') {
                 if (data.action === 'block') {
-                    actionText.setText(`${data.user}: ĐỠ ĐÒN!`);
                     playPose(fighter2, 'block', 1000);
                 } else if (data.action === 'dodge') {
-                    actionText.setText(`${data.user}: NÉ ĐÒN!`);
                     playPose(fighter2, 'dodge', 850);
                     sceneRef.tweens.add({ targets: fighter2, x: 425, duration: 220, yoyo: true });
                 }
@@ -535,7 +518,6 @@
             // 3. CAMERA
             else if (data.type === 'CAMERA') {
                 if (data.action === 'zoom_in') {
-                    actionText.setText(`CAMERA: CẬN CẢNH!`);
                     sceneRef.cameras.main.zoomTo(1.4, 400);
                     setTimeout(() => sceneRef.cameras.main.zoomTo(1.0, 400), 1800);
                 }
