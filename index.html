@@ -174,8 +174,17 @@
         let pendingFinisher = null;
         let finisherSequence = 0;
         let joinMessageTimer = null;
+        let audienceSeatCursor = 0;
+        const ambientAudienceBySeat = new Map();
 
         const FIGHTER_HOME = Object.freeze({ blue: 180, red: 360 });
+        const FIGHTER_FLOOR_Y = 690;
+        const AUDIENCE_FACE_COUNT = 30;
+        const AUDIENCE_SEATS = Object.freeze([
+            ...[65, 125, 185, 245, 305, 365, 425, 485].map(x => ({ x, y: 306, scale: 0.23, depth: 3 })),
+            ...[45, 95, 145, 195, 245, 295, 345, 395, 445, 495].map(x => ({ x, y: 394, scale: 0.27, depth: 4 })),
+            ...[32, 75, 118, 161, 204, 247, 293, 336, 379, 422, 465, 508].map(x => ({ x, y: 486, scale: 0.31, depth: 5 }))
+        ]);
         const CUSTOM_FIGHTER_DB = 'tiktok-arena-fighter-designs';
 
         const FIGHTER_FRAME = Object.freeze({
@@ -191,6 +200,11 @@
         const fighterPoseTimers = new Map();
 
         function preload() {
+            this.load.image('arena_first_person', 'assets/arena-first-person.jpg');
+            this.load.spritesheet('audience_faces', 'assets/audience-faces.png', {
+                frameWidth: 128,
+                frameHeight: 128
+            });
             this.load.spritesheet('fighter_blue', 'assets/fighter-blue.png', {
                 frameWidth: 384,
                 frameHeight: 512
@@ -199,47 +213,24 @@
                 frameWidth: 384,
                 frameHeight: 512
             });
-
-            let g = this.add.graphics();
-
-            // Vẽ Khán giả (Trắng hạt tròn)
-            g.fillStyle(0xffffff, 1);
-            g.fillCircle(8, 8, 8);
-            g.generateTexture('audience_tex', 16, 16);
-            g.destroy();
         }
 
         function create() {
             sceneRef = this;
 
-            // Toàn bộ sân khấu nằm trong một khung dọc 9:16.
-            const stage = this.add.rectangle(270, 480, 516, 924, 0x11131d);
-            stage.setStrokeStyle(3, 0x334155);
-
-            // Khán đài nhiều tầng phía sau.
-            this.add.rectangle(270, 278, 480, 350, 0x151827);
-            this.add.rectangle(270, 205, 464, 78, 0x202538);
-            this.add.rectangle(270, 295, 464, 78, 0x1c2132);
-            this.add.rectangle(270, 385, 464, 78, 0x181d2c);
-            this.add.text(270, 82, 'KHÁN ĐÀI LIVE', {
-                fill: '#5ee7a8',
-                fontSize: '25px',
-                fontWeight: 'bold',
-                letterSpacing: 2
-            }).setOrigin(0.5);
-
-            // Sàn đấu võ.
-            const ring = this.add.rectangle(270, 675, 460, 270, 0x2a2a38);
-            ring.setStrokeStyle(4, 0x00ff88);
-            this.add.rectangle(270, 805, 480, 18, 0x00aa66);
+            // Góc nhìn từ ghế khán giả: võ đài boxing và toàn bộ khán phòng 9:16.
+            this.add.image(270, 480, 'arena_first_person').setDisplaySize(540, 960).setDepth(0);
+            createAmbientAudience();
 
             // Hai Võ sĩ
-            fighter1 = this.add.sprite(FIGHTER_HOME.blue, 805, 'fighter_blue', FIGHTER_FRAME.idle)
+            fighter1 = this.add.sprite(FIGHTER_HOME.blue, FIGHTER_FLOOR_Y, 'fighter_blue', FIGHTER_FRAME.idle)
                 .setOrigin(0.5, 0.88)
-                .setScale(0.58);
-            fighter2 = this.add.sprite(FIGHTER_HOME.red, 805, 'fighter_red', FIGHTER_FRAME.idle)
+                .setScale(0.58)
+                .setDepth(12);
+            fighter2 = this.add.sprite(FIGHTER_HOME.red, FIGHTER_FLOOR_Y, 'fighter_red', FIGHTER_FRAME.idle)
                 .setOrigin(0.5, 0.88)
-                .setScale(0.58);
+                .setScale(0.58)
+                .setDepth(12);
 
             joinText = this.add.text(270, 505, '', {
                 fontSize: '16px',
@@ -255,6 +246,21 @@
         }
 
         function update() {}
+
+        function createAmbientAudience() {
+            const frames = Phaser.Utils.Array.Shuffle(
+                Array.from({ length: AUDIENCE_FACE_COUNT }, (_, index) => index)
+            );
+
+            AUDIENCE_SEATS.forEach((seat, seatIndex) => {
+                const sprite = sceneRef.add.sprite(seat.x, seat.y, 'audience_faces', frames[seatIndex])
+                    .setOrigin(0.5, 1)
+                    .setScale(seat.scale)
+                    .setDepth(seat.depth)
+                    .setAlpha(0.9);
+                ambientAudienceBySeat.set(seatIndex, sprite);
+            });
+        }
 
         function showJoinMessage(user) {
             if (!joinText) return;
@@ -485,30 +491,47 @@
         }
 
         function addAudience(user) {
-            if (audiences.length >= 50) {
-                const oldAudience = audiences.shift();
-                oldAudience.sprite.destroy();
-                oldAudience.text.destroy();
+            const seatIndex = audienceSeatCursor % AUDIENCE_SEATS.length;
+            audienceSeatCursor += 1;
+            const seat = AUDIENCE_SEATS[seatIndex];
+
+            const ambientSprite = ambientAudienceBySeat.get(seatIndex);
+            if (ambientSprite) {
+                ambientSprite.destroy();
+                ambientAudienceBySeat.delete(seatIndex);
             }
 
-            const x = Phaser.Math.Between(65, 475);
-            const audienceRow = Phaser.Math.Between(0, 2);
-            const y = 205 + (audienceRow * 90) + Phaser.Math.Between(-22, 22);
-            const sprite = sceneRef.add.sprite(x, y, 'audience_tex');
-            const baseTint = Phaser.Display.Color.RandomRGB().color;
-            sprite.setTint(baseTint);
+            const occupiedIndex = audiences.findIndex(audience => audience.seatIndex === seatIndex);
+            if (occupiedIndex >= 0) {
+                const occupied = audiences.splice(occupiedIndex, 1)[0];
+                sceneRef.tweens.killTweensOf([occupied.sprite, occupied.text]);
+                occupied.sprite.destroy();
+                occupied.text.destroy();
+            }
 
-            const nameTag = sceneRef.add.text(x, y - 12, user, {
-                fontSize: '9px',
+            const sprite = sceneRef.add.sprite(seat.x, seat.y, 'audience_faces', Phaser.Math.Between(0, AUDIENCE_FACE_COUNT - 1))
+                .setOrigin(0.5, 1)
+                .setScale(0)
+                .setDepth(seat.depth);
+            const baseTint = 0xffffff;
+
+            const nameTag = sceneRef.add.text(seat.x, seat.y - (128 * seat.scale) + 2, user, {
+                fontSize: '8px',
                 fill: '#00ff88',
-                backgroundColor: '#00000088'
-            }).setOrigin(0.5);
+                backgroundColor: '#000000aa',
+                padding: { x: 2, y: 1 }
+            }).setOrigin(0.5).setDepth(seat.depth + 0.1);
 
-            const audience = { user, sprite, text: nameTag, baseTint };
+            const audience = { user, sprite, text: nameTag, baseTint, seatIndex };
             audiences.push(audience);
 
-            sprite.setScale(0);
-            sceneRef.tweens.add({ targets: sprite, scaleX: 1, scaleY: 1, duration: 200 });
+            sceneRef.tweens.add({
+                targets: sprite,
+                scaleX: seat.scale,
+                scaleY: seat.scale,
+                duration: 220,
+                ease: 'Back.easeOut'
+            });
             sceneRef.tweens.add({
                 targets: [sprite, nameTag],
                 y: '-=5',
