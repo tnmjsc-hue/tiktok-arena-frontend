@@ -58,6 +58,11 @@
         .upload-control strong { font-size: 12px; color: #fff; }
         .upload-control input { width: 100%; padding: 6px; font-size: 10px; }
         .upload-hint { color: #8f9bad; font-size: 10px; line-height: 1.4; }
+        .fighter-name-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .fighter-name-field { display: flex; flex-direction: column; gap: 4px; }
+        .fighter-name-field input { width: 100%; min-width: 0; padding: 8px 6px; font-size: 11px; font-weight: 700; }
+        .fighter-name-field.blue input { border-color: #2c92ff; }
+        .fighter-name-field.red input { border-color: #ff425b; }
         .fighter-command-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .fighter-command-column { display: flex; flex-direction: column; gap: 7px; padding: 8px; border: 1px solid #3d4658; border-radius: 9px; background: #14161d; }
         .fighter-command-column.blue { border-top: 4px solid #2c92ff; }
@@ -129,6 +134,16 @@
         <hr style="border-color: #333;">
 
         <h2>Lệnh Tương Tác Hai Võ Sĩ</h2>
+        <div class="fighter-name-grid">
+            <label class="fighter-name-field blue" for="fighter-blue-name">
+                Tên võ sĩ Xanh
+                <input id="fighter-blue-name" maxlength="24" oninput="updateFighterNamesFromControls()">
+            </label>
+            <label class="fighter-name-field red" for="fighter-red-name">
+                Tên võ sĩ Đỏ
+                <input id="fighter-red-name" maxlength="24" oninput="updateFighterNamesFromControls()">
+            </label>
+        </div>
         <div id="fighter-command-grid" class="fighter-command-grid"></div>
         <button class="btn-test" onclick="sendTest('SPAWN_AUDIENCE', 'join')">+1 Khán giả mới vào phòng</button>
         <button class="btn-test" onclick="sendTest('CAMERA', 'zoom_in')">Zoom Camera (!zoom)</button>
@@ -255,6 +270,7 @@
 
         const GIFT_CATALOG_KEY = 'tiktok-arena-gift-catalog-v1';
         const GIFT_BINDINGS_KEY = 'tiktok-arena-gift-bindings-v1';
+        const FIGHTER_NAMES_KEY = 'tiktok-arena-fighter-names-v1';
         const FIGHTER_COMMANDS = Object.freeze([
             { action: 'punch', label: 'Đấm', icon: '🥊' },
             { action: 'kick', label: 'Đá', icon: '🦵' },
@@ -272,6 +288,7 @@
         ]);
         let giftCatalog = new Map();
         let giftBindings = {};
+        let fighterNames = { blue: 'VÕ SĨ XANH', red: 'VÕ SĨ ĐỎ' };
 
         function normalizeGiftName(name) {
             return String(name || '').trim().toLocaleLowerCase('vi-VN');
@@ -297,6 +314,15 @@
             } catch {
                 giftBindings = {};
             }
+            try {
+                const savedNames = JSON.parse(localStorage.getItem(FIGHTER_NAMES_KEY)) || {};
+                fighterNames = {
+                    blue: String(savedNames.blue || 'VÕ SĨ XANH').trim().slice(0, 24),
+                    red: String(savedNames.red || 'VÕ SĨ ĐỎ').trim().slice(0, 24)
+                };
+            } catch {
+                fighterNames = { blue: 'VÕ SĨ XANH', red: 'VÕ SĨ ĐỎ' };
+            }
         }
 
         function sortedGifts() {
@@ -316,7 +342,26 @@
         function commandDisplayName(key) {
             const [side, action] = key.split(':');
             const command = FIGHTER_COMMANDS.find(item => item.action === action);
-            return `${side === 'blue' ? 'Xanh' : 'Đỏ'} · ${command?.label || action}`;
+            return `${fighterNames[side] || (side === 'blue' ? 'Xanh' : 'Đỏ')} · ${command?.label || action}`;
+        }
+
+        function renderFighterNameControls() {
+            document.getElementById('fighter-blue-name').value = fighterNames.blue;
+            document.getElementById('fighter-red-name').value = fighterNames.red;
+        }
+
+        function updateFighterNamesFromControls() {
+            fighterNames = {
+                blue: document.getElementById('fighter-blue-name').value.trim() || 'VÕ SĨ XANH',
+                red: document.getElementById('fighter-red-name').value.trim() || 'VÕ SĨ ĐỎ'
+            };
+            localStorage.setItem(FIGHTER_NAMES_KEY, JSON.stringify(fighterNames));
+            document.querySelectorAll('[data-fighter-command-title]').forEach(title => {
+                title.textContent = fighterNames[title.dataset.fighterCommandTitle];
+            });
+            renderGiftCatalog();
+            renderStageGiftBoards();
+            syncGiftBindingsToBackend();
         }
 
         function refreshGiftSelects() {
@@ -357,12 +402,12 @@
         function renderStageGiftBoards() {
             const hud = document.getElementById('fighter-gift-hud');
             hud.replaceChildren();
-            [['blue', 'VÕ SĨ XANH'], ['red', 'VÕ SĨ ĐỎ']].forEach(([side, title]) => {
+            ['blue', 'red'].forEach(side => {
                 const board = document.createElement('div');
                 board.className = `stage-gift-board ${side}`;
                 const heading = document.createElement('div');
                 heading.className = 'stage-gift-title';
-                heading.textContent = title;
+                heading.textContent = fighterNames[side];
                 board.appendChild(heading);
 
                 FIGHTER_COMMANDS.forEach(command => {
@@ -406,7 +451,8 @@
             if (socket && socket.connected && !OBS_MODE) {
                 socket.emit('UPDATE_GIFT_BINDINGS', {
                     bindings: giftBindings,
-                    catalog: [...giftCatalog.values()]
+                    catalog: [...giftCatalog.values()],
+                    fighterNames
                 });
             }
         }
@@ -424,6 +470,16 @@
                         diamonds: Math.max(0, Number(gift.diamonds) || 0),
                         source: gift.source || 'remote'
                     });
+                });
+            }
+            if (config.fighterNames && typeof config.fighterNames === 'object') {
+                fighterNames = {
+                    blue: String(config.fighterNames.blue || 'VÕ SĨ XANH').trim().slice(0, 24),
+                    red: String(config.fighterNames.red || 'VÕ SĨ ĐỎ').trim().slice(0, 24)
+                };
+                renderFighterNameControls();
+                document.querySelectorAll('[data-fighter-command-title]').forEach(title => {
+                    title.textContent = fighterNames[title.dataset.fighterCommandTitle];
                 });
             }
             refreshGiftSelects();
@@ -492,11 +548,12 @@
         function renderFighterCommands() {
             const grid = document.getElementById('fighter-command-grid');
             grid.replaceChildren();
-            [['blue', 'VÕ SĨ XANH'], ['red', 'VÕ SĨ ĐỎ']].forEach(([side, title]) => {
+            ['blue', 'red'].forEach(side => {
                 const column = document.createElement('div');
                 column.className = `fighter-command-column ${side}`;
                 const heading = document.createElement('h3');
-                heading.textContent = title;
+                heading.dataset.fighterCommandTitle = side;
+                heading.textContent = fighterNames[side];
                 column.appendChild(heading);
                 FIGHTER_COMMANDS.forEach(command => {
                     const card = document.createElement('div');
@@ -522,12 +579,17 @@
         }
 
         loadGiftConfiguration();
+        renderFighterNameControls();
         renderFighterCommands();
         renderGiftCatalog();
         renderStageGiftBoards();
         window.addEventListener('storage', event => {
-            if (event.key === GIFT_CATALOG_KEY || event.key === GIFT_BINDINGS_KEY) {
+            if (event.key === GIFT_CATALOG_KEY || event.key === GIFT_BINDINGS_KEY || event.key === FIGHTER_NAMES_KEY) {
                 loadGiftConfiguration();
+                renderFighterNameControls();
+                document.querySelectorAll('[data-fighter-command-title]').forEach(title => {
+                    title.textContent = fighterNames[title.dataset.fighterCommandTitle];
+                });
                 refreshGiftSelects();
                 renderGiftCatalog();
                 renderStageGiftBoards();
