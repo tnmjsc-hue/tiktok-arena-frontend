@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sàn Đấu Võ 2D TikTok Live</title>
+    <!-- Phaser 3 Engine -->
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <!-- Socket.io Client -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #111; color: #fff; overflow: hidden; display: flex; height: 100vh; }
+        #game-container { flex: 1; height: 100%; position: relative; }
+        
+        /* Dashboard điều khiển bên cạnh */
+        #ui-panel { width: 320px; background: #1e1e24; padding: 20px; border-left: 2px solid #333; display: flex; flex-direction: column; gap: 15px; }
+        h2 { color: #00ff88; font-size: 18px; text-transform: uppercase; letter-spacing: 1px; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        label { font-size: 12px; color: #aaa; }
+        input, button { padding: 10px; border-radius: 6px; border: none; font-size: 14px; }
+        input { background: #2a2a35; color: #fff; border: 1px solid #444; }
+        button { background: #00ff88; color: #000; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #00cc6a; }
+        .btn-test { background: #3a3a4a; color: #fff; margin-top: 5px; }
+        .btn-test:hover { background: #5a5a6a; }
+        #status-box { padding: 10px; background: #2a2a35; border-radius: 6px; font-size: 12px; border-left: 4px solid #ff4444; }
+        .status-online { border-left-color: #00ff88 !important; }
+        #log-box { flex: 1; background: #0d0d11; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; overflow-y: auto; color: #00ff88; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container"></div>
+
+    <div id="ui-panel">
+        <h2>TikTok Arena 2D</h2>
+        
+        <div class="form-group">
+            <label>Kết nối TikTok Username (Live):</label>
+            <input type="text" id="tiktok-username" placeholder="Ví dụ: abc_live">
+            <button onclick="connectTikTok()">Kết Nối Live</button>
+        </div>
+
+        <div id="status-box">Trạng thái: Chưa kết nối</div>
+
+        <hr style="border-color: #333;">
+
+        <h2>Bảng Test Lệnh Tương Tác</h2>
+        <button class="btn-test" onclick="sendTest('ATTACK', 'punch')">Võ sĩ 1 Đấm (!dam)</button>
+        <button class="btn-test" onclick="sendTest('ATTACK', 'kick')">Võ sĩ 1 Đá (!da)</button>
+        <button class="btn-test" onclick="sendTest('CAMERA', 'zoom_in')">Zoom Camera (!zoom)</button>
+        <button class="btn-test" onclick="sendTest('SPAWN_AUDIENCE', 'spawn')">Tặng Hoa Hồng (Khán giả)</button>
+        <button class="btn-test" onclick="sendTest('ULTIMATE', 'strike')">Quà Khủng (Kỹ năng tối thượng)</button>
+
+        <label style="margin-top: 10px;">Nhật ký sự kiện:</label>
+        <div id="log-box"></div>
+    </div>
+
+    <script>
+        const BACKEND_URL = 'http://localhost:4000';
+        const socket = io(BACKEND_URL);
+
+        function log(msg) {
+            const box = document.getElementById('log-box');
+            box.innerHTML += `<div>> ${msg}</div>`;
+            box.scrollTop = box.scrollHeight;
+        }
+
+        // ==========================================
+        // KHỞI TẠO GAME PHASER 3
+        // ==========================================
+        const config = {
+            type: Phaser.AUTO,
+            parent: 'game-container',
+            width: 1000,
+            height: 700,
+            backgroundColor: '#1a1a24',
+            physics: {
+                default: 'arcade',
+                arcade: { gravity: { y: 0 }, debug: false }
+            },
+            scene: { preload, create, update }
+        };
+
+        const game = new Phaser.Game(config);
+
+        let fighter1, fighter2;
+        let actionText;
+        let audiences = [];
+        let sceneRef;
+
+        function preload() {
+            // Tạo graphics vẽ tạm hình nhân vật võ sĩ dạng Vector pixel (không cần ảnh ngoài)
+            let g = this.add.graphics();
+            
+            // Vẽ Võ sĩ 1 (Xanh)
+            g.fillStyle(0x00aaff, 1);
+            g.fillRect(0, 0, 40, 80);
+            g.generateTexture('fighter1_tex', 40, 80);
+            g.clear();
+
+            // Vẽ Võ sĩ 2 (Đỏ)
+            g.fillStyle(0xff4444, 1);
+            g.fillRect(0, 0, 40, 80);
+            g.generateTexture('fighter2_tex', 40, 80);
+            g.clear();
+
+            // Vẽ Khán giả (Vàng)
+            g.fillStyle(0xffcc00, 1);
+            g.fillCircle(10, 10, 10);
+            g.generateTexture('audience_tex', 20, 20);
+            g.destroy();
+        }
+
+        function create() {
+            sceneRef = this;
+
+            // Sàn đấu Võ
+            let ring = this.add.rectangle(500, 450, 700, 250, 0x2a2a38);
+            ring.setStrokeStyle(4, 0x00ff88);
+
+            // Khán đài phía sau
+            this.add.rectangle(500, 200, 800, 150, 0x15151e);
+            this.add.text(420, 140, 'KHÁN ĐÀI', { fill: '#444', fontSize: '28px', fontWeight: 'bold' });
+
+            // Hai Võ sĩ
+            fighter1 = this.add.sprite(350, 420, 'fighter1_tex');
+            fighter2 = this.add.sprite(650, 420, 'fighter2_tex');
+
+            // Text hiển thị hành động trên đầu
+            actionText = this.add.text(500, 300, 'SẴN SÀNG ĐẤU!', { 
+                fontSize: '20px', 
+                fill: '#00ff88', 
+                fontStyle: 'bold',
+                backgroundColor: '#000000aa',
+                padding: { x: 10, y: 5 }
+            }).setOrigin(0.5);
+
+            log("Game đã sẵn sàng!");
+        }
+
+        function update() {}
+
+        // ==========================================
+        // XỬ LÝ LỆNH TỪ SOCKET.IO
+        // ==========================================
+        socket.on('GAME_COMMAND', (data) => {
+            log(`Lệnh nhận: ${data.type} - ${data.action || ''} (${data.user || ''})`);
+
+            if (data.type === 'ATTACK') {
+                if (data.action === 'punch') {
+                    // Hiệu ứng võ sĩ 1 lao vào đấm
+                    actionText.setText(`${data.user}: TUNG CÚ ĐẤM!`);
+                    sceneRef.tweens.add({
+                        targets: fighter1,
+                        x: 600,
+                        duration: 150,
+                        yoyo: true,
+                        onYoyo: () => {
+                            // Võ sĩ 2 rung lên khi trúng đòn
+                            sceneRef.cameras.main.shake(100, 0.01);
+                        }
+                    });
+                } else if (data.action === 'kick') {
+                    actionText.setText(`${data.user}: TUNG CÚ ĐÁ!`);
+                    sceneRef.tweens.add({
+                        targets: fighter1,
+                        x: 620,
+                        angle: -20,
+                        duration: 200,
+                        yoyo: true,
+                        onComplete: () => fighter1.setAngle(0)
+                    });
+                }
+            } 
+            else if (data.type === 'CAMERA') {
+                if (data.action === 'zoom_in') {
+                    actionText.setText(`CAMERA: CẬN CẢNH!`);
+                    sceneRef.cameras.main.zoomTo(1.4, 400);
+                    setTimeout(() => sceneRef.cameras.main.zoomTo(1.0, 400), 1800);
+                }
+            }
+            else if (data.type === 'SPAWN_AUDIENCE') {
+                actionText.setText(`${data.user} TẶNG HOA -> TẠO KHÁN GIẢ!`);
+                
+                // Spawn khán giả nhảy lên khán đài
+                let rx = Phaser.Math.Between(150, 850);
+                let ry = Phaser.Math.Between(180, 250);
+                let aud = sceneRef.add.sprite(rx, ry, 'audience_tex');
+                
+                // Thêm tên người tặng quà
+                let nameTag = sceneRef.add.text(rx, ry - 15, data.user, { fontSize: '10px', fill: '#fff' }).setOrigin(0.5);
+
+                // Hiệu ứng khán giả nhảy cổ vũ
+                sceneRef.tweens.add({
+                    targets: [aud, nameTag],
+                    y: '-=10',
+                    duration: 200,
+                    yoyo: true,
+                    repeat: -1
+                });
+            }
+            else if (data.type === 'ULTIMATE') {
+                actionText.setText(`🔥 ${data.user} TẶNG QUÀ LỚN: TUNG CHIÊU TỐI THƯỢNG! 🔥`);
+                
+                // Hiệu ứng flash màn hình
+                sceneRef.cameras.main.flash(500, 255, 255, 255);
+                sceneRef.cameras.main.shake(500, 0.03);
+
+                sceneRef.tweens.add({
+                    targets: fighter1,
+                    scaleX: 1.8,
+                    scaleY: 1.8,
+                    duration: 300,
+                    yoyo: true
+                });
+            }
+            else if (data.type === 'ENVIRONMENT') {
+                // Nhấp nháy đèn sàn đấu khi thả tim
+                sceneRef.cameras.main.setBackgroundColor('#2a1a34');
+                setTimeout(() => sceneRef.cameras.main.setBackgroundColor('#1a1a24'), 150);
+            }
+        });
+
+        socket.on('TIKTOK_STATUS', (data) => {
+            const statusBox = document.getElementById('status-box');
+            if (data.connected) {
+                statusBox.innerHTML = `Đã kết nối Live: @${data.username}`;
+                statusBox.classList.add('status-online');
+                log(`Đã kết nối thành công tới TikTok: @${data.username}`);
+            } else {
+                statusBox.innerHTML = `Lỗi kết nối TikTok!`;
+                statusBox.classList.remove('status-online');
+                log(`Lỗi kết nối TikTok Live.`);
+            }
+        });
+
+        // ==========================================
+        // CÁC HÀM GỌI API TỪ UI
+        // ==========================================
+        function connectTikTok() {
+            const username = document.getElementById('tiktok-username').value;
+            if (!username) return alert("Vui lòng nhập Username TikTok!");
+
+            log(`Đang kết nối tới TikTok: @${username}...`);
+            fetch(`${BACKEND_URL}/api/connect-tiktok`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username })
+            });
+        }
+
+        function sendTest(type, action) {
+            fetch(`${BACKEND_URL}/api/test-command`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, action, user: 'Viewer_Test' })
+            });
+        }
+    </script>
+</body>
+</html>
