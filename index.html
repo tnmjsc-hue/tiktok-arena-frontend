@@ -160,7 +160,7 @@
         const game = new Phaser.Game(config);
 
         const giftAnnouncement = document.getElementById('gift-announcement');
-        let fighter1, fighter2;
+        let fighter1, fighter2, joinText;
         let audiences = [];
         let sceneRef;
         let giftEffectTimer = null;
@@ -173,6 +173,7 @@
         let giftPresentationActive = false;
         let pendingFinisher = null;
         let finisherSequence = 0;
+        let joinMessageTimer = null;
 
         const FIGHTER_HOME = Object.freeze({ blue: 180, red: 360 });
         const CUSTOM_FIGHTER_DB = 'tiktok-arena-fighter-designs';
@@ -240,12 +241,51 @@
                 .setOrigin(0.5, 0.88)
                 .setScale(0.58);
 
+            joinText = this.add.text(270, 505, '', {
+                fontSize: '16px',
+                fill: '#00ff88',
+                fontWeight: 'bold',
+                backgroundColor: '#000000cc',
+                padding: { x: 10, y: 5 }
+            }).setOrigin(0.5).setAlpha(0).setDepth(30);
+
             log("Game đã sẵn sàng!");
             scheduleSparring(900);
             restoreCustomFighterAtlases();
         }
 
         function update() {}
+
+        function showJoinMessage(user) {
+            if (!joinText) return;
+            if (joinMessageTimer) joinMessageTimer.remove(false);
+            sceneRef.tweens.killTweensOf(joinText);
+
+            joinText
+                .setText(`${user || 'Khán giả'} VỪA VÀO XEM LIVE!`)
+                .setY(505)
+                .setAlpha(1)
+                .setScale(0.88);
+
+            sceneRef.tweens.add({
+                targets: joinText,
+                scaleX: 1,
+                scaleY: 1,
+                duration: 180,
+                ease: 'Back.easeOut'
+            });
+            joinMessageTimer = sceneRef.time.delayedCall(1600, () => {
+                sceneRef.tweens.add({
+                    targets: joinText,
+                    y: 493,
+                    alpha: 0,
+                    duration: 400,
+                    ease: 'Sine.easeIn',
+                    onComplete: () => joinText.setText('')
+                });
+                joinMessageTimer = null;
+            });
+        }
 
         function playPose(fighter, pose, duration = 650) {
             const oldTimer = fighterPoseTimers.get(fighter);
@@ -563,6 +603,7 @@
             // 1. TẠO KHÁN GIẢ MỚI
             if (data.type === 'SPAWN_AUDIENCE') {
                 addAudience(data.user);
+                showJoinMessage(data.user);
             }
             // 2. ACTION/COMMENT KẾT LIỄU
             else if (data.type === 'FINISHER' || data.type === 'ATTACK') {
