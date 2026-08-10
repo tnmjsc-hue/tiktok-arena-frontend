@@ -257,6 +257,11 @@
                 <label for="club3d-zoom">Khoảng cách camera: <span id="club3d-zoom-val">120%</span></label>
                 <input type="range" id="club3d-zoom" min="40" max="220" value="120" oninput="setClub3DZoom(this.value)">
             </div>
+            <div class="form-group">
+                <label for="club3d-max-chars">Số người tối đa trên sàn: <span id="club3d-max-chars-val">14</span></label>
+                <input type="range" id="club3d-max-chars" min="3" max="30" value="14" oninput="setClub3DMaxChars(this.value)">
+                <div class="upload-hint" id="club3d-count-line">Đang có 0 người trên sàn.</div>
+            </div>
             <details class="char-panel" open>
                 <summary>🎨 Nhân Vật &amp; Model</summary>
                 <div class="upload-hint">Tạo các nhân vật khác nhau (màu + hoạ tiết + động tác + thời gian đổi động tác). Khán giả bước vào sàn sẽ tự nhận ngẫu nhiên một nhân vật.</div>
@@ -978,7 +983,7 @@
             { x: -1.1, z: -1.15 }, { x: 1.1, z: -1.15 }, { x: -2.25, z: 0.7 }, { x: 2.25, z: 0.7 },
             { x: 0, z: 1.0 }, { x: -0.6, z: -0.9 }, { x: 0.6, z: -0.9 }, { x: -2.3, z: -1.0 }
         ]);
-        const CLUB3D_MAX_CHARACTERS = 14;
+        let club3DMaxChars = 14;
 
         // ==========================================
         // BỘ ASSET GLB — đổi file trong thư mục glb3d/ mà không cần sửa code:
@@ -1112,6 +1117,7 @@
             let applied = false;
             root.traverse(o => {
                 if (!o.isMesh || !o.material) return;
+                if (/head|eye|mouth|hair|hand|face|foot|shoe/i.test(o.name)) return;
                 const mats = Array.isArray(o.material) ? o.material : [o.material];
                 if (mats.some(m => m.isMeshBasicMaterial || m.isSpriteMaterial)) return;
                 if (o.isSkinnedMesh && headIndex >= 0) {
@@ -1127,6 +1133,63 @@
                 applied = true;
             });
             return applied;
+        }
+
+        function club3DCapsule(r, len, capSeg, radSeg) {
+            if (THREE.CapsuleGeometry) return new THREE.CapsuleGeometry(r, len, capSeg, radSeg);
+            return new THREE.CylinderGeometry(r, r, len + r * 2, radSeg);
+        }
+
+        function club3DFitModelToFloor(root, targetH) {
+            const box = new THREE.Box3().setFromObject(root);
+            const size = box.getSize(new THREE.Vector3());
+            const base = (targetH || 1.7) / Math.max(0.001, size.y || 1);
+            root.scale.setScalar(base);
+            const box2 = new THREE.Box3().setFromObject(root);
+            root.position.y += -box2.min.y;
+            return base;
+        }
+
+        function club3DFindBones(root) {
+            const bones = [];
+            root.traverse(o => { if (o.isBone) bones.push(o); });
+            const res = { armL: null, armR: null, legL: null, legR: null };
+            const byName = names => bones.find(o => names.indexOf(o.name.toLowerCase()) >= 0) || null;
+            res.armL = byName(['arm_l', 'leftarm', 'arml', 'upperarm_l', 'upperarm_left', 'leftupperarm', 'shoulder_l']);
+            res.armR = byName(['arm_r', 'rightarm', 'armr', 'upperarm_r', 'upperarm_right', 'rightupperarm', 'shoulder_r']);
+            res.legL = byName(['leg_l', 'leftupleg', 'leftleg', 'legl', 'thigh_l', 'thigh_left', 'leftthigh', 'leftupperleg', 'upleg_l']);
+            res.legR = byName(['leg_r', 'rightupleg', 'rightleg', 'legr', 'thigh_r', 'thigh_right', 'rightthigh', 'rightupperleg', 'upleg_r']);
+            const armLike = bones.filter(o => /arm/i.test(o.name));
+            const legLike = bones.filter(o => /leg|thigh|foot/i.test(o.name));
+            if (!res.armL) res.armL = armLike.find(o => /l/i.test(o.name)) || null;
+            if (!res.armR) res.armR = armLike.find(o => /r/i.test(o.name)) || null;
+            if (!res.legL) res.legL = legLike.find(o => /l/i.test(o.name)) || null;
+            if (!res.legR) res.legR = legLike.find(o => /r/i.test(o.name)) || null;
+            return res;
+        }
+
+        function club3DClipsFitSkeleton(root, clips) {
+            if (!clips || !clips.length) return false;
+            const boneNames = [];
+            root.traverse(o => { if (o.isBone) boneNames.push(o.name.toLowerCase()); });
+            if (!boneNames.length) return false;
+            const tracks = clips[0].tracks || [];
+            let total = 0;
+            let hits = 0;
+            for (const t of tracks) {
+                const n = String(t.name || '');
+                if (!/\.(position|quaternion|rotation)$/.test(n)) continue;
+                const dot = n.lastIndexOf('.');
+                const bone = dot > 0 ? n.slice(0, dot).toLowerCase() : '';
+                if (!bone) continue;
+                total++;
+                if (boneNames.indexOf(bone) >= 0 || boneNames.some(b => b === bone || b.indexOf(bone) >= 0 || bone.indexOf(b) >= 0)) hits++;
+            }
+            return total > 0 && hits / total >= 0.4;
+        }
+
+        function club3DRandomSpot() {
+            return Phaser.Math.RND.pick(CLUB3D_SPOTS);
         }
 
         async function buildClub3DPersonFromGLB(user, preset) {
@@ -1151,12 +1214,22 @@
             if (preset && preset.texture) {
                 await club3DApplyTexture(model, preset.texture, preset.tint || null);
             }
-            let pool = club3DAssets.animClips;
+            const bones = club3DFindBones(model);
+            const variation = preset && preset.scale ? preset.scale : Phaser.Math.FloatBetween(0.92, 1.1);
+            const base = club3DFitModelToFloor(model, 1.7);
+            model.scale.setScalar(base * variation);
+            const box = new THREE.Box3().setFromObject(model);
+            model.position.y += -box.min.y;
+
+            const allClips = (club3DAssets && club3DAssets.animClips) ? club3DAssets.animClips : [];
+            let pool = allClips;
             if (preset && preset.clips && preset.clips.length) {
-                const wanted = pool.filter(c => preset.clips.indexOf(c.name) >= 0);
+                const wanted = allClips.filter(c => preset.clips.indexOf(c.name) >= 0);
                 if (wanted.length) pool = wanted;
             }
-            const clip = pool.length ? Phaser.Math.RND.pick(pool) : null;
+            let fitPool = [];
+            if (club3DClipsFitSkeleton(model, pool)) fitPool = pool;
+            const clip = fitPool.length ? Phaser.Math.RND.pick(fitPool) : null;
             let mixer = new THREE.AnimationMixer(model);
             if (!clip) {
                 try { mixer.stopAllAction(); mixer = null; } catch {}
@@ -1174,18 +1247,21 @@
                     return null;
                 }
             }
-            const scale = preset && preset.scale ? preset.scale : Phaser.Math.FloatBetween(0.92, 1.1);
-            model.scale.setScalar(scale);
             return {
                 group: model,
                 model,
                 mixer,
                 clipName: clip ? clip.name : '',
                 user: String(user || '').trim(),
-                clipPool: pool,
+                clipPool: fitPool,
                 intervalMin: preset && preset.intervalMin ? preset.intervalMin : 7,
                 intervalMax: preset && preset.intervalMax ? preset.intervalMax : 13,
-                speed: preset && preset.speed ? preset.speed : null
+                speed: preset && preset.speed ? preset.speed : null,
+                armLP: bones.armL,
+                armRP: bones.armR,
+                legLP: bones.legL,
+                legRP: bones.legR,
+                danceUntil: club3DTime + Phaser.Math.FloatBetween(4, 8)
             };
         }
 
@@ -1410,66 +1486,92 @@
         }
 
         function buildClub3DPerson(preset) {
-            const skinTones = [0xffd9a0, 0xf0c49a, 0xe0ac69, 0xc68642, 0x8d5a2b];
+            const skinTones = [0xffd7a8, 0xf3c49b, 0xe2ab77, 0xc9884c, 0x8f5a2c];
             const hairColors = [0x3a2a1a, 0x16161e, 0xc98f3a, 0x7a3a1a, 0x1a1a2a, 0xffe066];
             const skin = new THREE.MeshStandardMaterial({ color: skinTones[Phaser.Math.Between(0, skinTones.length - 1)], roughness: 0.85 });
             const hair = new THREE.MeshStandardMaterial({ color: hairColors[Phaser.Math.Between(0, hairColors.length - 1)], roughness: 0.9 });
             const shirtColor = preset && preset.tint != null ? preset.tint : CLUB_PALETTE[Phaser.Math.Between(0, CLUB_PALETTE.length - 1)];
-            const shirt = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.6 });
-            const pants = new THREE.MeshStandardMaterial({ color: 0x23233f, roughness: 0.85 });
+            const shirt = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.55, metalness: 0.1 });
+            const pants = new THREE.MeshStandardMaterial({ color: 0x2b2b4a, roughness: 0.8 });
+            const shoe = new THREE.MeshStandardMaterial({ color: 0x1c1c28, roughness: 0.5 });
 
             const group = new THREE.Group();
 
-            const legGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.8, 6);
             const legLP = new THREE.Group();
-            legLP.position.set(-0.12, 0, 0);
-            const legL = new THREE.Mesh(legGeo, pants);
+            legLP.position.set(-0.13, 0.9, 0);
+            const legL = new THREE.Mesh(club3DCapsule(0.075, 0.64, 4, 8), pants);
+            legL.name = 'legL';
             legL.position.y = -0.4;
             legLP.add(legL);
+            const shoeL = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.06, 0.2), shoe);
+            shoeL.name = 'shoeL';
+            shoeL.position.set(0, -0.76, 0.05);
+            legLP.add(shoeL);
             const legRP = new THREE.Group();
-            legRP.position.set(0.12, 0, 0);
-            const legR = new THREE.Mesh(legGeo, pants);
+            legRP.position.set(0.13, 0.9, 0);
+            const legR = new THREE.Mesh(club3DCapsule(0.075, 0.64, 4, 8), pants);
+            legR.name = 'legR';
             legR.position.y = -0.4;
             legRP.add(legR);
+            const shoeR = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.06, 0.2), shoe);
+            shoeR.name = 'shoeR';
+            shoeR.position.set(0, -0.76, 0.05);
+            legRP.add(shoeR);
             group.add(legLP, legRP);
 
-            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.56, 0.24), shirt);
-            torso.position.y = 0.62;
+            const torso = new THREE.Mesh(club3DCapsule(0.2, 0.4, 4, 10), shirt);
+            torso.name = 'torso';
+            torso.position.y = 1.0;
             group.add(torso);
 
-            const armGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.6, 6);
             const armLP = new THREE.Group();
-            armLP.position.set(-0.29, 0.9, 0);
-            const armL = new THREE.Mesh(armGeo, shirt);
-            armL.position.y = -0.3;
+            armLP.position.set(-0.3, 1.32, 0);
+            const armL = new THREE.Mesh(club3DCapsule(0.055, 0.44, 4, 8), shirt);
+            armL.name = 'armL';
+            armL.position.y = -0.26;
             armLP.add(armL);
+            const handL = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), skin);
+            handL.name = 'handL';
+            handL.position.y = -0.56;
+            armLP.add(handL);
             const armRP = new THREE.Group();
-            armRP.position.set(0.29, 0.9, 0);
-            const armR = new THREE.Mesh(armGeo, shirt);
-            armR.position.y = -0.3;
+            armRP.position.set(0.3, 1.32, 0);
+            const armR = new THREE.Mesh(club3DCapsule(0.055, 0.44, 4, 8), shirt);
+            armR.name = 'armR';
+            armR.position.y = -0.26;
             armRP.add(armR);
+            const handR = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), skin);
+            handR.name = 'handR';
+            handR.position.y = -0.56;
+            armRP.add(handR);
             group.add(armLP, armRP);
 
             const headP = new THREE.Group();
-            headP.position.y = 1.08;
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.27, 0.27), skin);
-            head.position.y = 0.12;
-            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x141420 });
-            const eyeGeo = new THREE.BoxGeometry(0.04, 0.06, 0.02);
-            const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-            eyeL.position.set(-0.06, 0.04, 0.14);
-            const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-            eyeR.position.set(0.06, 0.04, 0.14);
-            head.add(eyeL, eyeR);
-            const hairCap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.09, 0.3), hair);
-            hairCap.position.y = 0.18;
-            head.add(hairCap);
+            headP.position.y = 1.5;
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 14, 14), skin);
+            head.name = 'head';
+            head.position.y = 0.17;
             headP.add(head);
+            const hairTop = new THREE.Mesh(new THREE.SphereGeometry(0.155, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), hair);
+            hairTop.name = 'hair';
+            hairTop.position.y = 0.2;
+            headP.add(hairTop);
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x16161f });
+            const eyeGeo = new THREE.SphereGeometry(0.018, 8, 8);
+            const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeL.name = 'eyeL';
+            eyeL.position.set(-0.055, 0.21, 0.135);
+            const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeR.name = 'eyeR';
+            eyeR.position.set(0.055, 0.21, 0.135);
+            headP.add(eyeL, eyeR);
+            const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.01), new THREE.MeshStandardMaterial({ color: 0x8a4a52 }));
+            mouth.name = 'mouth';
+            mouth.position.set(0, 0.12, 0.148);
+            headP.add(mouth);
             group.add(headP);
 
-            group.traverse(obj => {
-                if (obj.isMesh) obj.castShadow = true;
-            });
+            group.traverse(obj => { if (obj.isMesh) obj.castShadow = true; });
             return { group, legLP, legRP, armLP, armRP, headP };
         }
 
@@ -1508,40 +1610,86 @@
 
             for (const c of club3DCharacters) {
                 const g = c.group;
-                const isGLB = !!c.mixer;
                 const speed = c.speed || (c.mode === 'dance' ? 3.2 : 0.9);
                 const s = Math.sin(club3DTime * speed + c.phase);
-                if (!isGLB && c.armLP) {
-                    c.armLP.rotation.z = c.mode === 'dance' ? 0.5 * s + 0.35 : 0.12 * s;
-                    c.armRP.rotation.z = c.mode === 'dance' ? -0.5 * s - 0.35 : -0.12 * s;
-                }
-                const bob = Math.abs(Math.sin(club3DTime * speed * 1.4 + c.phase));
-                g.position.y = c.baseY + (c.jumpY || 0) + bob * (c.mode === 'dance' ? 0.09 : 0.02);
-                g.rotation.y = c.mode === 'dance' ? Math.sin(club3DTime * 0.9 + c.phase) * 0.5 : 0;
 
-                if (c.mode === 'walkin') {
-                    const k = Math.min(1, c.walkProgress += dt * 1.1);
+                if (c.mode === 'walkin' || c.mode === 'walk') {
+                    const dur = Math.max(0.3, c.walkDur || 0.9);
+                    const k = Math.min(1, c.walkProgress + dt / dur);
+                    c.walkProgress = k;
                     const e = 1 - Math.pow(1 - k, 3);
                     g.position.x = c.walkFromX + (c.spot.x - c.walkFromX) * e;
                     g.position.z = c.walkFromZ + (c.spot.z - c.walkFromZ) * e;
-                    if (k >= 1) c.mode = 'dance';
+                    const dirX = c.spot.x - c.walkFromX;
+                    const dirZ = c.spot.z - c.walkFromZ;
+                    if (dirX || dirZ) g.rotation.y = Math.atan2(dirX, dirZ);
+                    if (c.mixer && !c.clipFreeze) {
+                        try { c.mixer.time = 0; } catch {}
+                        c.clipFreeze = true;
+                    }
+                    if (k >= 1) {
+                        c.mode = 'dance';
+                        c.clipFreeze = false;
+                        c.danceUntil = club3DTime + Phaser.Math.FloatBetween(4, 9);
+                    }
+                } else {
+                    if (club3DTime >= (c.danceUntil || 0)) {
+                        const spot = club3DRandomSpot();
+                        c.mode = 'walk';
+                        c.walkFromX = g.position.x;
+                        c.walkFromZ = g.position.z;
+                        c.spot = { x: spot.x, z: spot.z };
+                        c.walkProgress = 0;
+                        const dist = Math.max(0.5, Math.hypot(spot.x - g.position.x, spot.z - g.position.z));
+                        c.walkDur = Math.max(0.6, dist / 1.4);
+                    }
                 }
 
-                if (isGLB) {
-                    if (club3DTime >= c.clipTimer) {
+                const isDancing = c.mode === 'dance' || c.mode === 'walkin';
+                const bob = Math.abs(Math.sin(club3DTime * speed * 1.4 + c.phase));
+                g.position.y = c.baseY + (c.jumpY || 0) + bob * (isDancing ? 0.09 : 0.02);
+
+                if (c.mode === 'walkin' || c.mode === 'walk') {
+                    const st = Math.sin(c.walkProgress * Math.PI * 6);
+                    if (c.armLP) {
+                        c.armLP.rotation.set(-st * 0.45, 0, 0);
+                        c.armRP.rotation.set(st * 0.45, 0, 0);
+                    }
+                    if (c.legLP) {
+                        c.legLP.rotation.set(st * 0.5, 0, 0);
+                        c.legRP.rotation.set(-st * 0.5, 0, 0);
+                    }
+                } else {
+                    g.rotation.y = Math.sin(club3DTime * 0.9 + c.phase) * 0.5;
+                    if (!c.mixer) {
+                        if (c.armLP) {
+                            c.armLP.rotation.set(0, 0, 0.5 * s + 0.35);
+                            c.armRP.rotation.set(0, 0, -0.5 * s - 0.35);
+                        }
+                        if (c.legLP) {
+                            c.legLP.rotation.set(0.14 * s, 0, 0);
+                            c.legRP.rotation.set(-0.14 * s, 0, 0);
+                        }
+                    }
+                }
+
+                if (c.mixer) {
+                    if (c.mode === 'dance' && club3DTime >= c.clipTimer) {
                         c.clipTimer = club3DTime + Phaser.Math.FloatBetween(c.intervalMin || 7, c.intervalMax || 13);
-                        const pool = (c.clipPool && c.clipPool.length) ? c.clipPool : club3DAssets.animClips;
+                        const pool = (c.clipPool && c.clipPool.length) ? c.clipPool : ((club3DAssets && club3DAssets.animClips) || []);
                         if (pool.length > 1) {
                             const others = pool.filter(a => a.name !== c.clipName);
                             const next = others.length ? Phaser.Math.RND.pick(others) : Phaser.Math.RND.pick(pool);
                             if (next) {
-                                c.mixer.stopAllAction();
-                                c.mixer.clipAction(next, c.model).play();
-                                c.clipName = next.name;
+                                try {
+                                    c.mixer.stopAllAction();
+                                    c.mixer.clipAction(next, c.model).play();
+                                    c.clipName = next.name;
+                                } catch {}
                             }
                         }
                     }
-                    c.mixer.update(dt);
+                    if (c.mode === 'dance') c.mixer.update(dt);
                 }
             }
 
@@ -1792,6 +1940,38 @@
                 }
             }
             club3DZoom = next;
+        }
+
+        function club3DRemoveCharacter(person) {
+            if (!person || !person.group) return;
+            club3DScene.remove(person.group);
+            if (person.mixer) {
+                try { person.mixer.stopAllAction(); } catch {}
+            }
+            person.group.traverse(obj => {
+                if (obj.material) {
+                    if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                    else obj.material.dispose();
+                }
+                if (obj.geometry) obj.geometry.dispose();
+            });
+        }
+
+        function setClub3DMaxChars(value) {
+            club3DMaxChars = Math.max(3, Math.min(30, parseInt(value, 10) || 14));
+            const el = document.getElementById('club3d-max-chars-val');
+            if (el) el.textContent = club3DMaxChars;
+            while (club3DCharacters.length > club3DMaxChars) {
+                club3DRemoveCharacter(club3DCharacters.shift());
+            }
+            club3DUpdateCountLabel();
+        }
+
+        function club3DUpdateCountLabel() {
+            const el = document.getElementById('club3d-count-line');
+            if (!el) return;
+            const txt = `Đang có ${club3DCharacters.length}/${club3DMaxChars} người trên sàn.`;
+            if (el.textContent !== txt) el.textContent = txt;
         }
 
         // ---------- BẢNG ĐIỀU KHIỂN NHÂN VẬT & MODEL ----------
@@ -2077,26 +2257,8 @@
         async function club3DSpawnViewer(user, presetOverride) {
             if (!club3DVisible || !club3DRenderer) return;
             if (!club3DAssets && !club3DAssetsLoading) loadClub3DAssets();
-            while (club3DCharacters.length >= CLUB3D_MAX_CHARACTERS) {
-                const oldest = club3DCharacters.shift();
-                club3DScene.remove(oldest.group);
-                if (oldest.mixer) {
-                    oldest.mixer.stopAllAction();
-                    oldest.group.traverse(obj => {
-                        if (obj.material) {
-                            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-                            else obj.material.dispose();
-                        }
-                    });
-                } else {
-                    oldest.group.traverse(obj => {
-                        if (obj.material) {
-                            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-                            else obj.material.dispose();
-                        }
-                        if (obj.geometry) obj.geometry.dispose();
-                    });
-                }
+            while (club3DCharacters.length >= club3DMaxChars) {
+                club3DRemoveCharacter(club3DCharacters.shift());
             }
             const spot = CLUB3D_SPOTS[club3DSpotIndex % CLUB3D_SPOTS.length];
             club3DSpotIndex += 1;
@@ -2117,13 +2279,16 @@
             person.walkFromX = -3;
             person.walkFromZ = spot.z;
             person.walkProgress = 0;
+            person.walkDur = 0.9;
             person.phase = Math.random() * Math.PI * 2;
             person.user = String(user || '').trim();
             if (!person.speed) person.speed = Phaser.Math.FloatBetween(2.6, 4.4);
             if (!person.clipTimer) person.clipTimer = club3DTime + Phaser.Math.FloatBetween(person.intervalMin || 7, person.intervalMax || 13);
+            if (!person.danceUntil) person.danceUntil = club3DTime + Phaser.Math.FloatBetween(4, 8);
             person.group.add(makeClub3DNameSprite(user));
             club3DScene.add(person.group);
             club3DCharacters.push(person);
+            club3DUpdateCountLabel();
         }
 
         function club3DReactComment(user, comment) {
