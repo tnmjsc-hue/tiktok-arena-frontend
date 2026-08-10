@@ -119,6 +119,20 @@
         .check-label { display: flex; align-items: center; gap: 8px; color: #fff; font-size: 13px; cursor: pointer; }
         .check-label input { width: auto; }
         input[type="range"] { padding: 0; accent-color: #00ff88; }
+        #controls-club3d details.char-panel { margin-top: 12px; border: 1px solid #3b4252; border-radius: 9px; background: #14161d; padding: 10px; }
+        #controls-club3d details.char-panel summary { cursor: pointer; font-size: 14px; font-weight: 800; color: #9ee7ff; margin-bottom: 8px; }
+        #controls-club3d details.char-panel h3 { font-size: 12px; margin: 10px 0 6px; color: #c9d4e3; }
+        #controls-club3d .form-group { margin: 8px 0; }
+        #club3d-char-clips { font-size: 10px; color: #9ea8b8; line-height: 2; }
+        #club3d-char-clips .clip-opt { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; color: #cfe2ff; }
+        #club3d-char-clips .clip-opt input { width: auto; }
+        #club3d-char-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+        .char-item { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 8px; border-radius: 8px; background: #1a1d28; }
+        .char-swatch { width: 40px; height: 40px; border-radius: 6px; background-size: cover; background-position: center; border: 1px solid #3b4252; }
+        .char-item .char-meta { display: flex; flex-direction: column; gap: 2px; font-size: 10px; color: #9ea8b8; min-width: 0; }
+        .char-item .char-meta strong { font-size: 12px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .char-item .char-actions { display: flex; flex-direction: column; gap: 4px; }
+        .char-item .char-actions button { min-height: 26px; padding: 3px 8px; font-size: 10px; }
     </style>
 </head>
 <body>
@@ -239,6 +253,55 @@
                 <label for="club3d-shake">Rung máy: <span id="club3d-shake-val">Trung bình</span></label>
                 <input type="range" id="club3d-shake" min="0" max="100" value="50" oninput="setClub3DShake(this.value)">
             </div>
+            <div class="form-group">
+                <label for="club3d-zoom">Khoảng cách camera: <span id="club3d-zoom-val">120%</span></label>
+                <input type="range" id="club3d-zoom" min="40" max="220" value="120" oninput="setClub3DZoom(this.value)">
+            </div>
+            <details class="char-panel" open>
+                <summary>🎨 Nhân Vật &amp; Model</summary>
+                <div class="upload-hint">Tạo các nhân vật khác nhau (màu + hoạ tiết + động tác + thời gian đổi động tác). Khán giả bước vào sàn sẽ tự nhận ngẫu nhiên một nhân vật.</div>
+                <div class="form-group">
+                    <label class="check-label">
+                        <input type="checkbox" id="club3d-auto-assign" checked onchange="setClub3DAutoAssign(this.checked)">
+                        Tự áp nhân vật ngẫu nhiên cho khán giả mới
+                    </label>
+                </div>
+                <h3>Model gốc (có xương)</h3>
+                <label class="upload-control">
+                    📦 Chọn model GLB
+                    <input type="file" id="club3d-model-upload" accept=".glb,.gltf" onchange="uploadClub3DModel(this.files[0])">
+                </label>
+                <div id="club3d-model-status" class="upload-hint">Đang dùng: glb3d/dancer.glb (mặc định)</div>
+                <div class="upload-hint">Model sẽ thay thế dancer.glb cho khán giả mới. Động tác có trong model được thêm vào danh sách bên dưới.</div>
+                <h3>Tạo nhân vật từ texture</h3>
+                <div class="upload-grid">
+                    <label class="upload-control">
+                        🖼 Ảnh hoạ tiết
+                        <input type="file" id="club3d-tex-upload" accept="image/png,image/webp,image/jpeg" onchange="onClub3DTextureUpload(this.files[0])">
+                    </label>
+                    <label class="upload-control">
+                        Màu áo
+                        <input type="color" id="club3d-char-tint" value="#ff4dd8" oninput="club3DCharTint = this.value">
+                    </label>
+                </div>
+                <div class="upload-grid">
+                    <label class="upload-control">
+                        Tên nhân vật
+                        <input type="text" id="club3d-char-name" maxlength="24" placeholder="Vd: Neon Hồng">
+                    </label>
+                    <button class="btn-test" onclick="saveClub3DCharacter()">➕ Lưu nhân vật</button>
+                </div>
+                <div class="form-group">
+                    <label>Đổi động tác sau (giây): từ
+                        <input type="number" id="club3d-char-interval-min" min="3" max="30" value="7" style="width:58px">
+                        đến
+                        <input type="number" id="club3d-char-interval-max" min="3" max="30" value="13" style="width:58px">
+                    </label>
+                </div>
+                <div class="form-group" id="club3d-char-clips">Động tác: chưa có clip (mặc định dùng tất cả).</div>
+                <button class="btn-test" onclick="club3DGenerateRandomVariants()">🎲 Tạo 6 nhân vật ngẫu nhiên</button>
+                <div id="club3d-char-list"></div>
+            </details>
             <div class="upload-hint">Bật camera để thấy các góc máy đổi liên tục (wide → cận mặt → DJ → bar → trần neon).</div>
             <button class="btn-test" onclick="testClub3DSpawn()">👤 Test khán giả bước vào</button>
             <button class="btn-test" onclick="testClub3DComment()">💬 Test bình luận (gật đầu)</button>
@@ -943,6 +1006,13 @@
         let club3DAssets = null;
         let club3DAssetsLoading = false;
         let club3DDemoSpawned = false;
+        let club3DZoom = 1.2;
+        let club3DCharTint = '#ff4dd8';
+        let club3DCharTexture = null;
+        let club3DCharPool = [];
+        let club3DAutoAssign = true;
+        let club3DUploadedModel = null;
+        const CLUB3D_CHAR_DB = 'tiktok-arena-club3d-chars-v1';
 
         function loadClub3DAssets() {
             if (club3DAssets || club3DAssetsLoading || !window.THREE || !THREE.GLTFLoader) return;
@@ -953,14 +1023,21 @@
             Promise.allSettled(jobs).then(results => {
                 const model = results.shift();
                 if (model.status !== 'fulfilled' || !model.value || !model.value.scene) throw new Error('model GLB không tải được');
+                const fileClips = results
+                    .filter(r => r.status === 'fulfilled' && (r.value.animations || [])[0])
+                    .map(r => r.value.animations[0]);
+                const uploadedClips = (club3DUploadedModel && club3DUploadedModel.clips) || [];
+                const modelClips = club3DUploadedModel ? uploadedClips : (model.value.animations || []);
+                const merged = [];
+                modelClips.forEach(c => { if (!merged.some(x => x.name === c.name)) merged.push(c); });
+                fileClips.forEach(c => { if (!merged.some(x => x.name === c.name)) merged.push(c); });
                 club3DAssets = {
-                    modelRoot: model.value.scene,
-                    modelClips: model.value.animations || [],
-                    animClips: results
-                        .filter(r => r.status === 'fulfilled' && (r.value.animations || [])[0])
-                        .map(r => r.value.animations[0])
+                    modelRoot: club3DUploadedModel ? club3DUploadedModel.root : model.value.scene,
+                    modelClips,
+                    animClips: merged
                 };
-                log(`Club 3D: bộ GLB sẵn sàng (${club3DAssets.animClips.length} động tác nhảy).`);
+                log(`Club 3D: bộ GLB sẵn sàng (${merged.length} động tác nhảy).`);
+                renderClub3DClipOptions();
             }).catch(err => {
                 log('Club 3D: không tải được bộ GLB, dùng nhân vật low-poly. (' + err.message + ')');
             }).finally(() => {
@@ -984,8 +1061,8 @@
             });
         }
 
-        function pickClub3DMaterialVariant() {
-            const v = Phaser.Math.RND.pick(CLUB3D_ASSETS.materials);
+        function pickClub3DMaterialVariant(tint) {
+            const v = tint != null ? { color: tint, emissive: 0x101018 } : Phaser.Math.RND.pick(CLUB3D_ASSETS.materials);
             return new THREE.MeshStandardMaterial({
                 color: v.color,
                 emissive: v.emissive,
@@ -995,7 +1072,64 @@
             });
         }
 
-        function buildClub3DPersonFromGLB(user) {
+        function club3DLoadTexture(dataUrl) {
+            return new Promise(resolve => {
+                const img = new Image();
+                img.onload = () => {
+                    try {
+                        const c = document.createElement('canvas');
+                        c.width = 256;
+                        c.height = 256;
+                        const g = c.getContext('2d');
+                        const s = Math.max(256 / img.width, 256 / img.height);
+                        const w = img.width * s;
+                        const h = img.height * s;
+                        g.drawImage(img, (256 - w) / 2, (256 - h) / 2, w, h);
+                        const tex = new THREE.CanvasTexture(c);
+                        tex.encoding = THREE.sRGBEncoding;
+                        if ('colorSpace' in tex) tex.colorSpace = 'srgb';
+                        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                        tex.needsUpdate = true;
+                        resolve(tex);
+                    } catch (err) {
+                        resolve(null);
+                    }
+                };
+                img.onerror = () => resolve(null);
+                img.src = dataUrl;
+            });
+        }
+
+        // Dán hoạ tiết lên "quần áo" (bỏ qua đầu/mắt). Trả về true nếu áp được.
+        async function club3DApplyTexture(root, dataUrl, tint) {
+            if (!dataUrl) return false;
+            const tex = await club3DLoadTexture(dataUrl);
+            if (!tex) return false;
+            let headIndex = -1;
+            root.traverse(o => {
+                if (o.isBone && /head/i.test(o.name)) headIndex = o.index;
+            });
+            let applied = false;
+            root.traverse(o => {
+                if (!o.isMesh || !o.material) return;
+                const mats = Array.isArray(o.material) ? o.material : [o.material];
+                if (mats.some(m => m.isMeshBasicMaterial || m.isSpriteMaterial)) return;
+                if (o.isSkinnedMesh && headIndex >= 0) {
+                    const a = o.geometry.attributes.skinIndex;
+                    if (a && a.getX(0) === headIndex) return;
+                }
+                mats.forEach(m => {
+                    if (m.map && m.map !== tex) m.map.dispose();
+                    m.map = tex;
+                    if (tint != null) m.color.set(tint);
+                    m.needsUpdate = true;
+                });
+                applied = true;
+            });
+            return applied;
+        }
+
+        async function buildClub3DPersonFromGLB(user, preset) {
             if (!window.THREE || !THREE.SkeletonUtils || !club3DAssets) return null;
             let model;
             try {
@@ -1003,16 +1137,26 @@
             } catch (err) {
                 return null;
             }
+            const tint = preset ? preset.tint : null;
             model.traverse(obj => {
                 if (obj.isMesh) {
                     obj.castShadow = true;
+                    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                    if (mats.some(m => m.isMeshBasicMaterial || m.isSpriteMaterial)) return;
                     try {
-                        obj.material = pickClub3DMaterialVariant();
+                        obj.material = pickClub3DMaterialVariant(tint);
                     } catch {}
                 }
             });
-            const mixedClips = club3DAssets.animClips.length ? club3DAssets.animClips : club3DAssets.modelClips;
-            const clip = mixedClips.length ? Phaser.Math.RND.pick(mixedClips) : null;
+            if (preset && preset.texture) {
+                await club3DApplyTexture(model, preset.texture, preset.tint || null);
+            }
+            let pool = club3DAssets.animClips;
+            if (preset && preset.clips && preset.clips.length) {
+                const wanted = pool.filter(c => preset.clips.indexOf(c.name) >= 0);
+                if (wanted.length) pool = wanted;
+            }
+            const clip = pool.length ? Phaser.Math.RND.pick(pool) : null;
             let mixer = new THREE.AnimationMixer(model);
             if (!clip) {
                 try { mixer.stopAllAction(); mixer = null; } catch {}
@@ -1030,9 +1174,19 @@
                     return null;
                 }
             }
-            const scale = Phaser.Math.FloatBetween(0.92, 1.1);
+            const scale = preset && preset.scale ? preset.scale : Phaser.Math.FloatBetween(0.92, 1.1);
             model.scale.setScalar(scale);
-            return { group: model, model, mixer, clipName: clip ? clip.name : '', user: String(user || '').trim() };
+            return {
+                group: model,
+                model,
+                mixer,
+                clipName: clip ? clip.name : '',
+                user: String(user || '').trim(),
+                clipPool: pool,
+                intervalMin: preset && preset.intervalMin ? preset.intervalMin : 7,
+                intervalMax: preset && preset.intervalMax ? preset.intervalMax : 13,
+                speed: preset && preset.speed ? preset.speed : null
+            };
         }
 
         function buildClub3DScene() {
@@ -1255,11 +1409,13 @@
             scene.add(bodies, heads);
         }
 
-        function buildClub3DPerson() {
-            const skin = new THREE.MeshStandardMaterial({ color: 0xffd9a0, roughness: 0.85 });
-            const hairColors = [0x3a2a1a, 0x16161e, 0xc98f3a, 0x7a3a1a, 0x1a1a2a];
+        function buildClub3DPerson(preset) {
+            const skinTones = [0xffd9a0, 0xf0c49a, 0xe0ac69, 0xc68642, 0x8d5a2b];
+            const hairColors = [0x3a2a1a, 0x16161e, 0xc98f3a, 0x7a3a1a, 0x1a1a2a, 0xffe066];
+            const skin = new THREE.MeshStandardMaterial({ color: skinTones[Phaser.Math.Between(0, skinTones.length - 1)], roughness: 0.85 });
             const hair = new THREE.MeshStandardMaterial({ color: hairColors[Phaser.Math.Between(0, hairColors.length - 1)], roughness: 0.9 });
-            const shirt = new THREE.MeshStandardMaterial({ color: CLUB_PALETTE[Phaser.Math.Between(0, CLUB_PALETTE.length - 1)], roughness: 0.6 });
+            const shirtColor = preset && preset.tint != null ? preset.tint : CLUB_PALETTE[Phaser.Math.Between(0, CLUB_PALETTE.length - 1)];
+            const shirt = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.6 });
             const pants = new THREE.MeshStandardMaterial({ color: 0x23233f, roughness: 0.85 });
 
             const group = new THREE.Group();
@@ -1353,9 +1509,9 @@
             for (const c of club3DCharacters) {
                 const g = c.group;
                 const isGLB = !!c.mixer;
-                const speed = c.mode === 'dance' ? 3.2 : 0.9;
+                const speed = c.speed || (c.mode === 'dance' ? 3.2 : 0.9);
                 const s = Math.sin(club3DTime * speed + c.phase);
-                if (!isGLB) {
+                if (!isGLB && c.armLP) {
                     c.armLP.rotation.z = c.mode === 'dance' ? 0.5 * s + 0.35 : 0.12 * s;
                     c.armRP.rotation.z = c.mode === 'dance' ? -0.5 * s - 0.35 : -0.12 * s;
                 }
@@ -1373,10 +1529,11 @@
 
                 if (isGLB) {
                     if (club3DTime >= c.clipTimer) {
-                        c.clipTimer = club3DTime + Phaser.Math.FloatBetween(7, 13);
-                        if (c.clipName && club3DAssets && club3DAssets.animClips.length > 1) {
-                            const others = club3DAssets.animClips.filter(a => a.name !== c.clipName);
-                            const next = Phaser.Math.RND.pick(others);
+                        c.clipTimer = club3DTime + Phaser.Math.FloatBetween(c.intervalMin || 7, c.intervalMax || 13);
+                        const pool = (c.clipPool && c.clipPool.length) ? c.clipPool : club3DAssets.animClips;
+                        if (pool.length > 1) {
+                            const others = pool.filter(a => a.name !== c.clipName);
+                            const next = others.length ? Phaser.Math.RND.pick(others) : Phaser.Math.RND.pick(pool);
                             if (next) {
                                 c.mixer.stopAllAction();
                                 c.mixer.clipAction(next, c.model).play();
@@ -1419,7 +1576,7 @@
         // ==========================================
         function createClub3DCinema() {
             const shot = CLUB3D_FIXED_SHOTS[0];
-            club3DCamera.position.set(shot.pos[0], shot.pos[1], shot.pos[2]);
+            club3DCamera.position.copy(club3DZoomShotPos(shot.pos, shot.look));
             club3DCamera.fov = shot.fov;
             club3DCamera.lookAt(shot.look[0], shot.look[1], shot.look[2]);
             club3DCamera.updateProjectionMatrix();
@@ -1435,7 +1592,7 @@
                 fromPos: new THREE.Vector3().copy(club3DCamera.position),
                 fromLook: lookPos.clone(),
                 fromFov: shot.fov,
-                toPos: new THREE.Vector3(shot.pos[0], shot.pos[1], shot.pos[2]),
+                toPos: club3DZoomShotPos(shot.pos, shot.look),
                 toLook: lookPos.clone(),
                 toFov: shot.fov,
                 lookPos,
@@ -1444,10 +1601,19 @@
         }
 
         function clampClub3DCamPos(v) {
-            v.x = Math.max(-3.05, Math.min(3.05, v.x));
-            v.y = Math.max(0.3, Math.min(3.4, v.y));
-            v.z = Math.max(-2.85, Math.min(3.5, v.z));
+            v.x = Math.max(-4, Math.min(4, v.x));
+            v.y = Math.max(0.3, Math.min(4.2, v.y));
+            v.z = Math.max(-2.85, Math.min(7, v.z));
             return v;
+        }
+
+        // Đẩy vị trí camera ra xa điểm nhìn theo hệ số club3DZoom (khoảng cách camera).
+        function club3DZoomShotPos(pos, look) {
+            const out = new THREE.Vector3(pos[0], pos[1], pos[2]);
+            const L = new THREE.Vector3(look[0], look[1], look[2]);
+            out.sub(L).multiplyScalar(club3DZoom).add(L);
+            clampClub3DCamPos(out);
+            return out;
         }
 
         function pickClub3DShot(cin) {
@@ -1489,7 +1655,7 @@
             cin.fromFov = club3DCamera.fov;
             cin.char = shot.char || null;
             cin.rel = shot.rel || null;
-            cin.toPos.set(shot.pos[0], shot.pos[1], shot.pos[2]);
+            cin.toPos.copy(club3DZoomShotPos(shot.pos, shot.look));
             cin.toLook.set(shot.look[0], shot.look[1], shot.look[2]);
             cin.toFov = shot.fov;
             cin.holdMin = shot.holdMin;
@@ -1514,8 +1680,9 @@
             if (cin.char && cin.char.group) {
                 const cp = cin.char.group.position;
                 const rel = cin.rel || [0.9, 1.4, 0.5];
-                cin.toPos.set(cp.x + rel[0], cp.y + rel[1], cp.z + rel[2]);
                 cin.toLook.set(cp.x, cp.y + 1.32, cp.z);
+                cin.toPos.set(cp.x + rel[0], cp.y + rel[1], cp.z + rel[2]);
+                cin.toPos.sub(cin.toLook).multiplyScalar(club3DZoom).add(cin.toLook);
                 clampClub3DCamPos(cin.toPos);
             }
 
@@ -1563,8 +1730,10 @@
             cin.fromPos.copy(club3DCamera.position);
             cin.fromLook.copy(cin.lookPos);
             cin.fromFov = club3DCamera.fov;
-            cin.toPos.set(cp.x + rel[0], cp.y + rel[1], cp.z + rel[2]);
             cin.toLook.set(cp.x, cp.y + 1.35, cp.z);
+            cin.toPos.set(cp.x + rel[0], cp.y + rel[1], cp.z + rel[2]);
+            cin.toPos.sub(cin.toLook).multiplyScalar(club3DZoom).add(cin.toLook);
+            clampClub3DCamPos(cin.toPos);
             cin.toFov = 36;
             cin.char = c;
             cin.rel = rel;
@@ -1606,6 +1775,289 @@
             if (el) el.textContent = v < 35 ? 'Ít' : v < 65 ? 'Trung bình' : 'Nhiều';
         }
 
+        function setClub3DZoom(value) {
+            const v = Math.max(40, Math.min(220, Number(value) || 100));
+            const next = v / 100;
+            const el = document.getElementById('club3d-zoom-val');
+            if (el) el.textContent = `${v}%`;
+            if (club3DCamera && club3DCinema) {
+                const cam = club3DCamera;
+                const ratio = next / (club3DZoom || 1);
+                if (ratio !== 1) {
+                    const dir = new THREE.Vector3().subVectors(cam.position, club3DCinema.lookPos);
+                    cam.position.copy(club3DCinema.lookPos).addScaledVector(dir, ratio);
+                    clampClub3DCamPos(cam.position);
+                    club3DCinema.fromPos.copy(cam.position);
+                    club3DCinema.fromFov = cam.fov;
+                }
+            }
+            club3DZoom = next;
+        }
+
+        // ---------- BẢNG ĐIỀU KHIỂN NHÂN VẬT & MODEL ----------
+        function saveClub3DChars() {
+            try {
+                localStorage.setItem(CLUB3D_CHAR_DB, JSON.stringify({
+                    pool: club3DCharPool,
+                    autoAssign: club3DAutoAssign
+                }));
+            } catch (err) {
+                log('Club 3D: không lưu được nhân vật (dung lượng lưu trữ đã đầy).');
+            }
+        }
+
+        function loadClub3DChars() {
+            try {
+                const raw = localStorage.getItem(CLUB3D_CHAR_DB);
+                if (!raw) return;
+                const data = JSON.parse(raw);
+                if (Array.isArray(data.pool)) club3DCharPool = data.pool;
+                if (typeof data.autoAssign === 'boolean') club3DAutoAssign = data.autoAssign;
+            } catch {}
+        }
+
+        function initClub3DCharacterPanel() {
+            loadClub3DChars();
+            const assignEl = document.getElementById('club3d-auto-assign');
+            if (assignEl) assignEl.checked = club3DAutoAssign;
+            renderClub3DClipOptions();
+            renderClub3DCharList();
+        }
+
+        function setClub3DAutoAssign(on) {
+            club3DAutoAssign = !!on;
+            saveClub3DChars();
+            log(`Club 3D: ${club3DAutoAssign ? 'Bật' : 'Tắt'} tự áp nhân vật ngẫu nhiên cho khán giả mới.`);
+        }
+
+        function uploadClub3DModel(file) {
+            if (!file) return;
+            if (!window.THREE || !THREE.GLTFLoader) {
+                log('Club 3D: Three.js chưa sẵn sàng, không nạp được model.');
+                return;
+            }
+            if (!/\.(glb|gltf)$/i.test(file.name)) {
+                log('Club 3D: hãy chọn file .glb hoặc .gltf.');
+                return;
+            }
+            const url = URL.createObjectURL(file);
+            new THREE.GLTFLoader().load(url, gltf => {
+                URL.revokeObjectURL(url);
+                club3DUploadedModel = { root: gltf.scene, clips: gltf.animations || [] };
+                if (club3DAssets) {
+                    club3DAssets.modelRoot = gltf.scene;
+                    const names = new Set(club3DAssets.animClips.map(c => c.name));
+                    (gltf.animations || []).forEach(c => { if (!names.has(c.name)) club3DAssets.animClips.push(c); });
+                    club3DAssets.modelClips = gltf.animations || [];
+                    renderClub3DClipOptions();
+                }
+                const el = document.getElementById('club3d-model-status');
+                if (el) el.textContent = `Đang dùng: ${file.name}`;
+                log(`Club 3D: đã nạp model ${file.name} (${(gltf.animations || []).length} động tác trong model).`);
+            }, undefined, err => {
+                URL.revokeObjectURL(url);
+                log('Club 3D: không đọc được model GLB. (' + err.message + ')');
+            });
+        }
+
+        function onClub3DTextureUpload(file) {
+            if (!file || !window.THREE) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                const img = new Image();
+                img.onload = () => {
+                    const c = document.createElement('canvas');
+                    c.width = 256;
+                    c.height = 256;
+                    const g = c.getContext('2d');
+                    const s = Math.max(256 / img.width, 256 / img.height);
+                    const w = img.width * s;
+                    const h = img.height * s;
+                    g.drawImage(img, (256 - w) / 2, (256 - h) / 2, w, h);
+                    club3DCharTexture = c.toDataURL('image/jpeg', 0.82);
+                    log('Club 3D: đã chọn ảnh hoạ tiết cho nhân vật mới. Bấm "Lưu nhân vật".');
+                };
+                img.onerror = () => log('Club 3D: không đọc được ảnh hoạ tiết.');
+                img.src = reader.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function club3DSelectedClips() {
+            const checks = document.querySelectorAll('#club3d-char-clips .char-clip-opt:checked');
+            return Array.from(checks).map(el => el.value);
+        }
+
+        function saveClub3DCharacter() {
+            const nameEl = document.getElementById('club3d-char-name');
+            const name = (nameEl.value || '').trim() || `Nhân vật ${club3DCharPool.length + 1}`;
+            let imin = Math.max(3, Math.min(30, parseInt(document.getElementById('club3d-char-interval-min').value, 10) || 7));
+            let imax = Math.max(3, Math.min(30, parseInt(document.getElementById('club3d-char-interval-max').value, 10) || 13));
+            if (imin > imax) { const t = imin; imin = imax; imax = t; }
+            club3DCharPool.push({
+                id: 'c' + Date.now() + Math.floor(Math.random() * 1000),
+                name,
+                tint: club3DCharTint || '#ff4dd8',
+                texture: club3DCharTexture || null,
+                clips: club3DSelectedClips(),
+                intervalMin: imin,
+                intervalMax: imax,
+                scale: Phaser.Math.FloatBetween(0.92, 1.1)
+            });
+            saveClub3DChars();
+            renderClub3DCharList();
+            if (nameEl) nameEl.value = '';
+            log(`Club 3D: đã thêm nhân vật "${name}" (${club3DSelectedClips().length || 'tất cả'} động tác, đổi sau ${imin}–${imax} giây).`);
+        }
+
+        function renderClub3DClipOptions() {
+            const box = document.getElementById('club3d-char-clips');
+            if (!box) return;
+            const clips = club3DAssets && club3DAssets.animClips && club3DAssets.animClips.length
+                ? club3DAssets.animClips
+                : [];
+            if (!clips.length) {
+                box.innerHTML = 'Động tác: chưa có clip (mặc định dùng chuyển động có sẵn).';
+                return;
+            }
+            box.innerHTML = 'Động tác: ' + clips.map(c =>
+                `<label class="clip-opt"><input type="checkbox" class="char-clip-opt" value="${c.name.replace(/"/g, '&quot;')}" checked> ${c.name}</label>`
+            ).join('');
+        }
+
+        function renderClub3DCharList() {
+            const box = document.getElementById('club3d-char-list');
+            if (!box) return;
+            if (!club3DCharPool.length) {
+                box.innerHTML = '<div class="upload-hint">Chưa có nhân vật nào. Lưu nhân vật ở trên hoặc bấm "Tạo 6 nhân vật ngẫu nhiên".</div>';
+                return;
+            }
+            box.innerHTML = club3DCharPool.map(p => {
+                const swatch = p.texture
+                    ? `background-image:url('${p.texture}')`
+                    : `background:${p.tint || '#888'}`;
+                return `<div class="char-item">
+                    <div class="char-swatch" style="${swatch}"></div>
+                    <div class="char-meta">
+                        <strong>${(p.name || 'Nhân vật').replace(/</g, '&lt;')}</strong>
+                        <span>${(p.clips && p.clips.length) ? p.clips.length + ' động tác' : 'mọi động tác'} · đổi sau ${p.intervalMin || 7}–${p.intervalMax || 13}s</span>
+                    </div>
+                    <div class="char-actions">
+                        <button class="btn-test" onclick="club3DPreviewCharacter('${p.id}')">👁 Xem thử</button>
+                        <button class="btn-test" onclick="club3DDeleteCharacter('${p.id}')">🗑 Xoá</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function club3DPreviewCharacter(id) {
+            const preset = club3DCharPool.find(p => p.id === id);
+            if (!preset) return;
+            club3DSpawnViewer(`Xem:${preset.name || 'Nhân vật'}`, preset);
+            log(`Club 3D: đang xem thử nhân vật "${preset.name || 'Nhân vật'}" trên sàn.`);
+        }
+
+        function club3DDeleteCharacter(id) {
+            const index = club3DCharPool.findIndex(p => p.id === id);
+            if (index < 0) return;
+            const removed = club3DCharPool.splice(index, 1)[0];
+            saveClub3DChars();
+            renderClub3DCharList();
+            log(`Club 3D: đã xoá nhân vật "${removed.name || 'Nhân vật'}".`);
+        }
+
+        function club3DMakePatternDataURL(kind, c1, c2) {
+            const cv = document.createElement('canvas');
+            cv.width = 256;
+            cv.height = 256;
+            const g = cv.getContext('2d');
+            const a = '#' + Number(c1).toString(16).padStart(6, '0');
+            const b = '#' + Number(c2).toString(16).padStart(6, '0');
+            g.fillStyle = a;
+            g.fillRect(0, 0, 256, 256);
+            g.fillStyle = b;
+            if (kind === 'stripes') {
+                for (let i = -256; i < 256; i += 28) {
+                    g.save();
+                    g.translate(i, 0);
+                    g.rotate(-0.5);
+                    g.fillRect(0, -256, 13, 512);
+                    g.restore();
+                }
+            } else if (kind === 'dots') {
+                for (let y = 20; y < 256; y += 40) {
+                    for (let x = 20 + ((y / 40) % 2) * 20; x < 256; x += 40) {
+                        g.beginPath();
+                        g.arc(x, y, 13, 0, Math.PI * 2);
+                        g.fill();
+                    }
+                }
+            } else if (kind === 'checker') {
+                for (let y = 0; y < 256; y += 32) {
+                    for (let x = 0; x < 256; x += 32) {
+                        if (((x / 32) + (y / 32)) % 2 === 0) g.fillRect(x, y, 32, 32);
+                    }
+                }
+            } else if (kind === 'gradient') {
+                const grad = g.createLinearGradient(0, 0, 256, 256);
+                grad.addColorStop(0, a);
+                grad.addColorStop(1, b);
+                g.fillStyle = grad;
+                g.fillRect(0, 0, 256, 256);
+            } else if (kind === 'camo') {
+                for (let i = 0; i < 26; i++) {
+                    g.save();
+                    g.translate(Math.random() * 256, Math.random() * 256);
+                    g.rotate(Math.random() * Math.PI);
+                    g.beginPath();
+                    g.ellipse(0, 0, 18 + Math.random() * 26, 8 + Math.random() * 14, 0, 0, Math.PI * 2);
+                    g.fill();
+                    g.restore();
+                }
+            } else {
+                g.strokeStyle = b;
+                g.lineWidth = 14;
+                for (let y = 8; y < 256; y += 30) {
+                    g.beginPath();
+                    for (let x = 0; x <= 256; x += 8) {
+                        const yy = y + Math.sin(x / 22 + y) * 9;
+                        if (x === 0) g.moveTo(x, yy);
+                        else g.lineTo(x, yy);
+                    }
+                    g.stroke();
+                }
+            }
+            return cv.toDataURL('image/jpeg', 0.82);
+        }
+
+        function club3DGenerateRandomVariants() {
+            const kinds = ['stripes', 'dots', 'checker', 'gradient', 'camo', 'waves'];
+            const clips = (club3DAssets && club3DAssets.animClips) ? club3DAssets.animClips.map(c => c.name) : [];
+            for (let i = 0; i < 6; i++) {
+                const c1 = CLUB_PALETTE[Phaser.Math.Between(0, CLUB_PALETTE.length - 1)];
+                let c2 = CLUB_PALETTE[Phaser.Math.Between(0, CLUB_PALETTE.length - 1)];
+                if (c2 === c1) c2 = CLUB_PALETTE[(CLUB_PALETTE.indexOf(c1) + 1) % CLUB_PALETTE.length];
+                let selClips = [];
+                if (clips.length) {
+                    const count = Phaser.Math.Between(1, clips.length);
+                    selClips = Phaser.Utils.Array.Shuffle(clips.slice()).slice(0, count);
+                }
+                club3DCharPool.push({
+                    id: 'c' + Date.now() + i + Math.floor(Math.random() * 1000),
+                    name: `Biến thể ${i + 1}`,
+                    tint: '#' + Number(c1).toString(16).padStart(6, '0'),
+                    texture: club3DMakePatternDataURL(kinds[Phaser.Math.Between(0, kinds.length - 1)], c1, c2),
+                    clips: selClips,
+                    intervalMin: Phaser.Math.Between(5, 8),
+                    intervalMax: Phaser.Math.Between(9, 15),
+                    scale: Phaser.Math.FloatBetween(0.92, 1.1)
+                });
+            }
+            saveClub3DChars();
+            renderClub3DCharList();
+            log('Club 3D: đã tạo 6 nhân vật ngẫu nhiên chờ khán giả vào nhận.');
+        }
+
         function testClub3DSpawn() {
             const name = `Fan_${club3DCharacters.length + 1}`;
             club3DSpawnViewer(name);
@@ -1622,7 +2074,7 @@
             log('Club 3D: punch-in cận mặt người nhận quà.');
         }
 
-        function club3DSpawnViewer(user) {
+        async function club3DSpawnViewer(user, presetOverride) {
             if (!club3DVisible || !club3DRenderer) return;
             if (!club3DAssets && !club3DAssetsLoading) loadClub3DAssets();
             while (club3DCharacters.length >= CLUB3D_MAX_CHARACTERS) {
@@ -1649,8 +2101,14 @@
             const spot = CLUB3D_SPOTS[club3DSpotIndex % CLUB3D_SPOTS.length];
             club3DSpotIndex += 1;
             const isGLB = !!club3DAssets;
-            let person = isGLB ? buildClub3DPersonFromGLB(user) : buildClub3DPerson();
-            if (isGLB && !person) person = buildClub3DPerson();
+            const preset = presetOverride || (club3DAutoAssign && club3DCharPool.length ? Phaser.Math.RND.pick(club3DCharPool) : null);
+            let person = isGLB ? await buildClub3DPersonFromGLB(user, preset) : null;
+            if (!person) {
+                person = buildClub3DPerson(preset);
+                if (preset && preset.texture) {
+                    await club3DApplyTexture(person.group, preset.texture, preset.tint || null);
+                }
+            }
             person.group.position.set(-3, 0, spot.z);
             person.baseY = 0;
             person.jumpY = 0;
@@ -1661,7 +2119,8 @@
             person.walkProgress = 0;
             person.phase = Math.random() * Math.PI * 2;
             person.user = String(user || '').trim();
-            if (!person.clipTimer) person.clipTimer = club3DTime + Phaser.Math.FloatBetween(7, 13);
+            if (!person.speed) person.speed = Phaser.Math.FloatBetween(2.6, 4.4);
+            if (!person.clipTimer) person.clipTimer = club3DTime + Phaser.Math.FloatBetween(person.intervalMin || 7, person.intervalMax || 13);
             person.group.add(makeClub3DNameSprite(user));
             club3DScene.add(person.group);
             club3DCharacters.push(person);
@@ -1770,6 +2229,7 @@
             log("Game đã sẵn sàng!");
             scheduleSparring(900);
             restoreCustomFighterAtlases();
+            initClub3DCharacterPanel();
             applyMode();
         }
 
