@@ -172,6 +172,7 @@
         let combatLocked = false;
         let giftPresentationActive = false;
         let pendingFinisher = null;
+        let finisherSequence = 0;
 
         const FIGHTER_HOME = Object.freeze({ blue: 155, red: 385 });
         const CUSTOM_FIGHTER_DB = 'tiktok-arena-fighter-designs';
@@ -355,6 +356,7 @@
                 return;
             }
             combatLocked = true;
+            const sequence = ++finisherSequence;
             if (sparringTimer) sparringTimer.remove(false);
             if (finisherTimer) finisherTimer.remove(false);
             resetFighters();
@@ -381,6 +383,7 @@
             }
 
             finisherTimer = sceneRef.time.delayedCall(2850, () => {
+                if (sequence !== finisherSequence) return;
                 resetFighters();
                 combatLocked = false;
                 finisherTimer = null;
@@ -445,6 +448,9 @@
 
             if (isLargeGift) {
                 combatLocked = true;
+                finisherSequence += 1;
+                if (finisherTimer) finisherTimer.remove(false);
+                finisherTimer = null;
                 if (sparringTimer) sparringTimer.remove(false);
             }
 
@@ -500,6 +506,7 @@
         // Xử lý Lệnh từ Server gửi xuống
         socket.on('GAME_COMMAND', (data) => {
             log(`${data.type} - ${data.action || ''} (${data.user || ''})`);
+            if (!sceneRef || !actionText) return;
 
             // 1. TẠO KHÁN GIẢ MỚI
             if (data.type === 'SPAWN_AUDIENCE') {
