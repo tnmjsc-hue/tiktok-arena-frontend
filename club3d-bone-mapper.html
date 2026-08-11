@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Club 3D — Bone Mapper (Gán Xương Cho Model)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.149.0/three.min.js"></script>
+    <script src="vendor/three/GLTFLoader.js"></script>
+    <script src="vendor/three/SkeletonUtils.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #08080c; color: #e8e8f0; display: flex; height: 100vh; overflow: hidden; }
+        #left { flex: 1; position: relative; background: #0b0710; }
+        #viewer { position: absolute; inset: 0; }
+        #viewer canvas { display: block; }
+        #viewer-hint { position: absolute; left: 12px; bottom: 10px; font-size: 11px; color: #888; background: #0009; padding: 4px 8px; border-radius: 6px; }
+        #right { width: 400px; background: #12121a; border-left: 2px solid #22222e; padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+        h2 { color: #00ff88; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; }
+        h3 { color: #ff4dd8; font-size: 13px; margin: 6px 0 4px; }
+        label { font-size: 12px; color: #aaa; }
+        input[type="file"] { font-size: 12px; }
+        select { width: 100%; background: #1e1e2a; color: #fff; border: 1px solid #333; border-radius: 5px; padding: 5px; font-size: 12px; }
+        button { background: #00ff88; color: #000; border: none; border-radius: 6px; padding: 7px 10px; font-weight: bold; cursor: pointer; font-size: 12px; }
+        button:hover { background: #00cc6a; }
+        button.ghost { background: #2a2a3a; color: #fff; }
+        button.ghost:hover { background: #4a4a5a; }
+        .box { background: #1a1a24; border: 1px solid #2a2a38; border-radius: 8px; padding: 10px; }
+        .role-row { display: grid; grid-template-columns: 130px 1fr 30px; gap: 6px; align-items: center; margin-bottom: 6px; }
+        .role-key { font-size: 11px; color: #ffd166; font-family: monospace; text-align: right; }
+        .role-label { font-size: 12px; color: #ccc; }
+        .ok-mark { color: #00ff88; font-weight: bold; }
+        .bad-mark { color: #ff4444; font-weight: bold; }
+        #status { font-size: 11px; color: #00ff88; min-height: 14px; }
+        .fit { font-size: 12px; padding: 6px 8px; border-radius: 6px; background: #0d0d13; border-left: 4px solid #555; }
+        .fit.ok { border-left-color: #00ff88; color: #00ff88; }
+        .fit.bad { border-left-color: #ff5555; color: #ffb0b0; }
+        .clip-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+        .clip-item:hover { background: #1e1e2a; }
+        .clip-item.active { background: #2a2a3a; border: 1px solid #00ff8844; }
+        .clip-src { font-size: 10px; color: #888; }
+        .tag { display: inline-block; font-size: 10px; background: #ff4dd833; color: #ffb0e0; border-radius: 4px; padding: 1px 5px; margin-left: 6px; }
+        .tree { max-height: 160px; overflow-y: auto; font-size: 11px; background: #0d0d13; border-radius: 6px; padding: 8px; }
+        .tree ul { list-style: none; padding-left: 14px; }
+        .tree .bone-name { color: #9fb6ff; }
+        .tree .assigned { color: #00ff88; font-weight: bold; }
+        .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+        .hint { font-size: 11px; color: #888; line-height: 1.5; }
+        .controls { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+        .ctrl-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+    <div id="left">
+        <div id="viewer"></div>
+        <div id="viewer-hint">Kéo để xoay · Lăn chuột để zoom</div>
+    </div>
+
+    <div id="right">
+        <h2>🎮 Club 3D — Bone Mapper</h2>
+        <div class="hint">Upload model GLB (có rig/xương), gán xương cho các vai trò rồi test nhảy ngay.<br>
+        Dữ liệu lưu chung với Arena (localStorage) — chỉ cần mở qua server <b>http://127.0.0.1:8124/club3d-bone-mapper.html</b>.</div>
+        <div id="status"></div>
+
+        <div class="box">
+            <label>1. Chọn model có xương (skeleton):</label>
+            <input type="file" id="model-upload" accept=".glb,.gltf" onchange="uploadModel(this.files[0])">
+            <div id="model-info" class="hint">Chưa có model. Gợi ý: quaternius_cc0-skeleton-1343.glb (trong Desktop/glb).</div>
+        </div>
+
+        <div class="box">
+            <h3>2. Gán xương cho vai trò</h3>
+            <div id="role-list"></div>
+            <div class="btn-row" style="margin-top:6px;">
+                <button onclick="autoGuess()">✨ Đoán tự động</button>
+                <button class="ghost" onclick="clearMapping()">Xóa hết</button>
+            </div>
+            <div id="fit-display" class="fit" style="margin-top:6px;">Chưa có model.</div>
+        </div>
+
+        <div class="box">
+            <h3>3. Xương trong model</h3>
+            <div id="bone-tree" class="tree">Upload model để xem danh sách xương.</div>
+        </div>
+
+        <div class="box">
+            <h3>4. Test động tác</h3>
+            <div id="clip-list"></div>
+            <div class="ctrl-row" style="margin-top:6px;">
+                <label style="width:70px;">Tốc độ:</label>
+                <input type="range" id="speed" min="10" max="300" value="100" oninput="setSpeed(this.value)">
+                <span id="speed-val">1.0x</span>
+            </div>
+            <div class="ctrl-row">
+                <button onclick="togglePlay()" id="play-btn" style="flex:1;">⏸ Tạm dừng</button>
+                <button class="ghost" onclick="cycleClip()" style="flex:1;">⏭ Clip kế tiếp</button>
+            </div>
+        </div>
+
+        <div class="box">
+            <h3>5. Lưu cho Arena</h3>
+            <div class="btn-row">
+                <button onclick="saveMapping()">💾 Lưu & dùng trong Arena</button>
+                <button class="ghost" onclick="exportMapping()">Xuất JSON</button>
+                <label class="ghost" style="display:inline-block;padding:7px 10px;border-radius:6px;cursor:pointer;">Nhập JSON
+                    <input type="file" id="import-json" accept=".json,application/json" style="display:none;" onchange="importMapping(this.files[0])">
+                </label>
+            </div>
+            <div id="save-info" class="hint" style="margin-top:6px;">Bản đồ áp dụng cho model đang upload trong Arena. Model nào có sẵn tên xương chuẩn (arm_l/arm_r/root/chest) thì không cần.</div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // CẤU HÌNH
+        // ==========================================
+        const BONEMAP_DB = 'tiktok-arena-club3d-bonemap-v1';
+        const DANCE_CLIP_URLS = ['glb3d/anims/dance_house.glb', 'glb3d/anims/dance_pop.glb'];
+
+        const ROLES = [
+            { key: 'root',  label: 'Root / Hips',     alias: ['root', 'hips', 'pelvis', 'mixamorig:hips', 'bip001', 'bip001 pelvis'] },
+            { key: 'spine', label: 'Spine',            alias: ['spine', 'spine1', 'spine2', 'torso', 'mixamorig:spine', 'bip001 spine'] },
+            { key: 'chest', label: 'Chest',            alias: ['chest', 'chest1', 'chest2', 'upperchest', 'spine1', 'spine2', 'mixamorig:spine1', 'mixamorig:spine2', 'bip001 spine1', 'bip001 spine2', 'torso'] },
+            { key: 'head',  label: 'Head',             alias: ['head', 'neck1', 'mixamorig:head', 'bip001 head'] },
+            { key: 'arm_l', label: 'Arm trái',         alias: ['arm_l', 'leftarm', 'upperarm_l', 'leftupperarm', 'shoulder_l', 'upperarm_left', 'leftarm', 'mixamorig:leftarm', 'mixamorig:leftupperarm', 'bip001 l upperarm', 'leftshoulder'] },
+            { key: 'arm_r', label: 'Arm phải',         alias: ['arm_r', 'rightarm', 'upperarm_r', 'rightupperarm', 'shoulder_r', 'upperarm_right', 'rightarm', 'mixamorig:rightarm', 'mixamorig:rightupperarm', 'bip001 r upperarm', 'rightshoulder'] },
+            { key: 'leg_l', label: 'Chân trái',        alias: ['leg_l', 'leftupleg', 'leftleg', 'thigh_l', 'leftthigh', 'leftupperleg', 'upleg_l', 'thigh_left', 'mixamorig:leftupleg', 'bip001 l thigh', 'leftupleg'] },
+            { key: 'leg_r', label: 'Chân phải',        alias: ['leg_r', 'rightupleg', 'rightleg', 'thigh_r', 'rightthigh', 'rightupperleg', 'upleg_r', 'thigh_right', 'mixamorig:rightupleg', 'bip001 r thigh', 'rightupleg'] }
+        ];
+
+        // ==========================================
+        // STATE
+        // ==========================================
+        let loader = null;
+        let modelScene = null;      // scene gốc (chưa clone)
+        let modelInstance = null;   // bản clone đang hiển thị
+        let modelFileName = '';
+        let modelBones = [];        // [{name, parent}]
+        let danceClips = [];        // [{clip, src}]
+        let modelClips = [];        // [{clip, src:'model'}]
+        let allClips = [];
+        let boneMap = {};           // { role: boneName }
+        let mixer = null;
+        let activeAction = null;
+        let currentClip = null;
+        let playing = true;
+        let speed = 1.0;
+        let yaw = 0;
+        let camDist = 4.5;
+        let dragging = false;
+        let lastX = 0;
+
+        // ==========================================
+        // THREE SETUP
+        // ==========================================
+        let renderer, scene, camera, charGroup, clock;
+
+        function initViewer() {
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+            renderer.shadowMap.enabled = true;
+            document.getElementById('viewer').appendChild(renderer.domElement);
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b0710);
+
+            camera = new THREE.PerspectiveCamera(45, 1, 0.1, 60);
+
+            scene.add(new THREE.AmbientLight(0x554e6e, 0.6));
+            const key = new THREE.DirectionalLight(0xfff0ff, 0.9);
+            key.position.set(3, 6, 4);
+            key.castShadow = true;
+            key.shadow.mapSize.set(1024, 1024);
+            scene.add(key);
+            const rim = new THREE.PointLight(0xff4dd8, 15, 14);
+            rim.position.set(-2, 3, 2);
+            scene.add(rim);
+            const rim2 = new THREE.PointLight(0x00cfff, 15, 14);
+            rim2.position.set(2, 2, -2);
+            scene.add(rim2);
+
+            const grid = new THREE.GridHelper(6, 16, 0x00ff8855, 0x222233);
+            scene.add(grid);
+            const floor = new THREE.Mesh(
+                new THREE.CircleGeometry(4, 48),
+                new THREE.MeshStandardMaterial({ color: 0x15121e, roughness: 0.9 })
+            );
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            charGroup = new THREE.Group();
+            scene.add(charGroup);
+
+            clock = new THREE.Clock();
+
+            const cv = renderer.domElement;
+            cv.addEventListener('pointerdown', e => { dragging = true; lastX = e.clientX; });
+            window.addEventListener('pointerup', () => dragging = false);
+            window.addEventListener('pointermove', e => {
+                if (!dragging) return;
+                yaw += (e.clientX - lastX) * 0.01;
+                lastX = e.clientX;
+            });
+            cv.addEventListener('wheel', e => {
+                e.preventDefault();
+                camDist = Math.min(12, Math.max(2, camDist * (e.deltaY > 0 ? 1.1 : 0.9)));
+            }, { passive: false });
+
+            animate();
+            window.addEventListener('resize', resize);
+            resize();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = Math.min(clock.getDelta(), 0.05);
+            if (modelInstance) {
+                charGroup.rotation.y = yaw;
+                if (mixer) {
+                    if (playing) mixer.update(dt);
+                } else if (modelInstance) {
+                    modelInstance.position.y = 0.02 * Math.abs(Math.sin(clock.elapsedTime * 2));
+                }
+            }
+            camera.position.set(Math.sin(yaw * 0) * camDist, 1.5, camDist);
+            camera.position.x = Math.sin(yaw) * camDist;
+            camera.position.z = Math.cos(yaw) * camDist;
+            camera.lookAt(0, 0.9, 0);
+            renderer.render(scene, camera);
+        }
+
+        function resize() {
+            const el = document.getElementById('left');
+            const w = el.clientWidth, h = el.clientHeight;
+            renderer.setSize(w, h);
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+        }
+
+        // ==========================================
+        // LOG
+        // ==========================================
+        function log(msg) {
+            document.getElementById('status').textContent = '> ' + msg;
+        }
+
+        // ==========================================
+        // UPLOAD MODEL
+        // ==========================================
+        function uploadModel(file) {
+            if (!file) return;
+            if (!/\.(glb|gltf)$/i.test(file.name)) { log('Chọn file .glb hoặc .gltf!'); return; }
+            if (!loader) loader = new THREE.GLTFLoader();
+            const url = URL.createObjectURL(file);
+            loader.load(url, gltf => {
+                URL.revokeObjectURL(url);
+                modelFileName = file.name;
+                modelScene = gltf.scene;
+                modelClips = (gltf.animations || []).map(c => ({ clip: c, src: 'model' }));
+                collectBones(modelScene);
+                placeModel();
+                renderRoles();
+                renderTree();
+                renderClips();
+                autoGuess();
+                log(`Đã nạp ${file.name} — ${modelBones.length} xương, ${modelClips.length} động tác của model.`);
+            }, undefined, err => {
+                URL.revokeObjectURL(url);
+                log('Không đọc được model: ' + err.message);
+            });
+        }
+
+        function collectBones(root) {
+            modelBones = [];
+            root.traverse(o => {
+                if (o.isBone) modelBones.push({ name: o.name, parent: o.parent && o.parent.isBone ? o.parent.name : null });
+            });
+        }
+
+        function placeModel() {
+            clearChar();
+            modelInstance = THREE.SkeletonUtils.clone(modelScene);
+            modelInstance.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+            fitToFloor(modelInstance, 1.6);
+            charGroup.add(modelInstance);
+            mixer = new THREE.AnimationMixer(modelInstance);
+            allClips = [...danceClips, ...modelClips];
+        }
+
+        function fitToFloor(obj, targetH) {
+            const box = new THREE.Box3().setFromObject(obj);
+            const size = box.getSize(new THREE.Vector3());
+            const s = (targetH || 1.6) / Math.max(0.001, size.y || 1);
+            obj.scale.setScalar(s);
+            const b2 = new THREE.Box3().setFromObject(obj);
+            obj.position.y -= b2.min.y;
+            obj.position.x = 0;
+            obj.position.z = 0;
+        }
+
+        function clearChar() {
+            if (mixer) { try { mixer.stopAllAction(); } catch {} }
+            while (charGroup.children.length) {
+                const c = charGroup.children[0];
+                charGroup.remove(c);
+                if (c.traverse) c.traverse(o => {
+                    if (o.isMesh) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }
+                });
+            }
+            mixer = null;
+            activeAction = null;
+            currentClip = null;
+        }
+
+        // ==========================================
+        // DANCE CLIPS
+        // ==========================================
+        function loadDanceClips() {
+            if (!loader) loader = new THREE.GLTFLoader();
+            DANCE_CLIP_URLS.forEach(url => {
+                loader.load(url, gltf => {
+                    const clip = (gltf.animations || [])[0];
+                    if (clip) {
+                        danceClips.push({ clip, src: 'dance' });
+                        allClips = [...danceClips, ...modelClips];
+                        renderClips();
+                        log('Đã tải clip nhảy: ' + clip.name);
+                    }
+                }, undefined, () => {
+                    log('Không tải được ' + url + ' (mở qua http://127.0.0.1:8124).');
+                });
+            });
+        }
+
+        // ==========================================
+        // BONE MAPPING
+        // ==========================================
+        function renderRoles() {
+            const box = document.getElementById('role-list');
+            if (!modelBones.length) {
+                box.innerHTML = '<div class="hint">Upload model trước.</div>';
+                return;
+            }
+            box.innerHTML = ROLES.map(r => {
+                const opts = ['<option value="">(không gán)</option>',
+                    ...modelBones.map(b => {
+                        const sel = boneMap[r.key] === b.name ? ' selected' : '';
+                        return `<option value="${esc(b.name)}"${sel}>${esc(b.name)}</option>`;
+                    })
+                ].join('');
+                return `<div class="role-row">
+                    <span class="role-label">${r.label}</span>
+                    <select onchange="setRole('${r.key}', this.value)">${opts}</select>
+                    <span id="mark-${r.key}" class="bad-mark">✗</span>
+                </div>`;
+            }).join('');
+            updateMarks();
+            updateFit();
+        }
+
+        function setRole(key, boneName) {
+            if (boneName) boneMap[key] = boneName;
+            else delete boneMap[key];
+            updateMarks();
+            updateFit();
+            refreshActiveClip();
+        }
+
+        function updateMarks() {
+            ROLES.forEach(r => {
+                const el = document.getElementById('mark-' + r.key);
+                if (el) el.textContent = boneMap[r.key] ? '✓' : '✗';
+                if (el) el.className = boneMap[r.key] ? 'ok-mark' : 'bad-mark';
+            });
+        }
+
+        function autoGuess() {
+            if (!modelBones.length) return;
+            boneMap = {};
+            const used = new Set();
+            const norm = n => String(n).toLowerCase().replace(/mixamorig[:_]/g, '').replace(/[^a-z0-9]/g, '');
+
+            const isLeft = n => {
+                const s = n.toLowerCase();
+                return /^l[a-z]/.test(s) || s.indexOf('left') >= 0 || /tr[áa]i/.test(s) || /[._-]l$/.test(s) || /_left$/.test(s);
+            };
+            const isRight = n => {
+                const s = n.toLowerCase();
+                return /^r[a-z]/.test(s) || s.indexOf('right') >= 0 || /ph[ảa]i/.test(s) || /[._-]r$/.test(s) || /_right$/.test(s);
+            };
+
+            const pickAlias = (aliasList, sideFilter) => {
+                return modelBones.find(b => {
+                    if (used.has(b.name)) return false;
+                    const n = norm(b.name);
+                    if (!aliasList.some(a => norm(a) === n)) return false;
+                    if (sideFilter && !sideFilter(b.name)) return false;
+                    return true;
+                });
+            };
+
+            // Thứ tự ưu tiên: dance clips chỉ animate root/chest/arm_l/arm_r.
+            const priority = ['root', 'chest', 'arm_l', 'arm_r', 'leg_l', 'leg_r', 'spine', 'head'];
+            priority.forEach(key => {
+                const role = ROLES.find(r => r.key === key);
+                if (!role || boneMap[key]) return;
+                const isSide = /^(arm|leg)_[lr]$/.test(key);
+                const sideFilter = isSide ? (key.endsWith('_l') ? isLeft : isRight) : null;
+                const b = pickAlias(role.alias, sideFilter);
+                if (b) { boneMap[key] = b.name; used.add(b.name); }
+            });
+
+            // Pass 2: arm/leg — nhận diện side theo tên (kể cả không khớp alias), ví dụ LUpperLeg / R.UpperArm
+            ['arm', 'leg'].forEach(part => {
+                [['_l', isLeft], ['_r', isRight]].forEach(([suffix, sideF]) => {
+                    const key = part + suffix;
+                    if (boneMap[key]) return;
+                    const cand = modelBones.find(b => {
+                        if (used.has(b.name)) return false;
+                        if (!new RegExp(part, 'i').test(b.name)) return false;
+                        if (/end/i.test(b.name)) return false;
+                        return sideF(b.name);
+                    });
+                    if (cand) { boneMap[key] = cand.name; used.add(cand.name); }
+                });
+            });
+
+            // Pass 3: root/chest/spine/head bằng alias dạng chứa chuỗi (không phân biệt side)
+            ROLES.filter(r => !boneMap[r.key]).forEach(role => {
+                const b = modelBones.find(x => {
+                    if (used.has(x.name)) return false;
+                    const n = norm(x.name);
+                    return role.alias.some(a => {
+                        const an = norm(a);
+                        return an && (n === an || n.indexOf(an) >= 0);
+                    });
+                });
+                if (b) { boneMap[role.key] = b.name; used.add(b.name); }
+            });
+
+            // Đồng bộ lại dropdown
+            ROLES.forEach(r => {
+                const sel = document.querySelector(`#role-list select[onchange="setRole('${r.key}', this.value)"]`);
+                if (sel) sel.value = boneMap[r.key] || '';
+            });
+            updateMarks();
+            updateFit();
+            refreshActiveClip();
+            log('Đã đoán tự động — kiểm tra lại các ô màu đỏ ✗.');
+        }
+
+        function clearMapping() {
+            boneMap = {};
+            ROLES.forEach(r => {
+                const sel = document.querySelector(`#role-list select[onchange="setRole('${r.key}', this.value)"]`);
+                if (sel) sel.value = '';
+            });
+            updateMarks();
+            updateFit();
+            refreshActiveClip();
+        }
+
+        // ==========================================
+        // BONE TREE
+        // ==========================================
+        function renderTree() {
+            const box = document.getElementById('bone-tree');
+            if (!modelBones.length) { box.innerHTML = 'Upload model để xem xương.'; return; }
+            const byName = {};
+            modelBones.forEach(b => byName[b.name] = b);
+            const roots = modelBones.filter(b => !byName[b.parent]);
+            const roleOf = {};
+            Object.keys(boneMap).forEach(k => roleOf[boneMap[k]] = k);
+
+            const walk = (list, depth) => {
+                if (!list.length) return '';
+                let html = '<ul>';
+                list.forEach(b => {
+                    const kids = modelBones.filter(x => x.parent === b.name);
+                    const assigned = roleOf[b.name];
+                    html += `<li><span class="${assigned ? 'assigned' : 'bone-name'}">${esc(b.name)}</span>${assigned ? `<span class="tag">${assigned}</span>` : ''}` +
+                        (kids.length ? walk(kids, depth + 1) : '') + '</li>';
+                });
+                return html + '</ul>';
+            };
+            box.innerHTML = walk(roots, 0);
+        }
+
+        // ==========================================
+        // FIT % & REMAP
+        // ==========================================
+        function modelBoneNames() {
+            const set = new Set();
+            modelBones.forEach(b => set.add(b.name.toLowerCase()));
+            return set;
+        }
+
+        function remapClip(clip) {
+            if (!clip || !modelInstance) return clip;
+            const names = modelBoneNames();
+            const has = n => names.has(n.toLowerCase());
+            const tracks = clip.tracks || [];
+            let changed = false;
+            const out = [];
+            for (const t of tracks) {
+                const dot = t.name.lastIndexOf('.');
+                if (dot <= 0) { out.push(t); continue; }
+                const bone = t.name.slice(0, dot);
+                const prop = t.name.slice(dot + 1);
+                const mapped = boneMap[bone];
+                if (!mapped || has(bone) || !has(mapped)) { out.push(t); continue; }
+                const nt = t.clone();
+                nt.name = mapped + '.' + prop;
+                out.push(nt);
+                changed = true;
+            }
+            if (!changed) return clip;
+            try { return new THREE.AnimationClip(clip.name, clip.duration, out); }
+            catch (err) { return clip; }
+        }
+
+        function clipFitStats(clip) {
+            const names = modelBoneNames();
+            const has = n => names.has(n.toLowerCase());
+            const tracks = clip.tracks || [];
+            let total = 0, resolved = 0;
+            for (const t of tracks) {
+                const dot = t.name.lastIndexOf('.');
+                if (dot <= 0) continue;
+                const bone = t.name.slice(0, dot);
+                total++;
+                if (has(bone)) { resolved++; continue; }
+                const mapped = boneMap[bone];
+                if (mapped && has(mapped)) resolved++;
+            }
+            return { total, resolved, pct: total ? Math.round(resolved / total * 100) : 0 };
+        }
+
+        function updateFit() {
+            const el = document.getElementById('fit-display');
+            if (!modelInstance) { el.textContent = 'Chưa có model.'; el.className = 'fit'; return; }
+            const missing = ROLES.filter(r => !boneMap[r.key]);
+            const stats = currentClip ? clipFitStats(currentClip) : null;
+            const rows = ROLES.map(r => {
+                const ok = !boneMap[r.key];
+                return `<span style="color:${ok ? '#ff5555' : '#00ff88'}">${r.label} ${ok ? '✗' : '✓'}</span>`;
+            }).join(' ');
+            const clipLine = stats
+                ? ` | Clip "${currentClip.name}": ${stats.resolved}/${stats.total} track khớp (${stats.pct}%) — ${stats.pct >= 40 ? 'OK nhảy được' : 'thiếu, cần gán thêm xương'}`
+                : ' | Chọn 1 clip để test.';
+            el.innerHTML = rows + clipLine;
+            el.className = 'fit ' + (stats && stats.pct >= 40 ? 'ok' : 'bad');
+        }
+
+        // ==========================================
+        // CLIP LIST + PLAYBACK
+        // ==========================================
+        function renderClips() {
+            const box = document.getElementById('clip-list');
+            if (!allClips.length) {
+                box.innerHTML = '<div class="hint">Đang tải clip nhảy (dance_house, dance_pop)...</div>';
+                return;
+            }
+            box.innerHTML = allClips.map((item, i) => {
+                const active = currentClip === item.clip ? 'active' : '';
+                return `<div class="clip-item ${active}" onclick="playClipIndex(${i})">
+                    <span>${esc(item.clip.name)}</span>
+                    <span class="clip-src">${item.src === 'dance' ? 'dance' : 'model'}</span>
+                    ${/attack|death|idle|run|spawn|fight|kick|punch/i.test(item.clip.name) ? '<span class="tag">combat?</span>' : ''}
+                </div>`;
+            }).join('');
+            if (!currentClip && allClips.length) playClipIndex(0);
+        }
+
+        function playClipIndex(i) {
+            const item = allClips[i];
+            if (!item) return;
+            playClip(item.clip);
+        }
+
+        function playClip(clip) {
+            if (!modelInstance || !mixer) return;
+            try { mixer.stopAllAction(); } catch {}
+            const useClip = remapClip(clip);
+            const action = mixer.clipAction(useClip, modelInstance);
+            if (!action) return;
+            action.reset();
+            action.play();
+            action.setLoop(THREE.LoopRepeat, Infinity);
+            action.setEffectiveTimeScale(speed);
+            action.setEffectiveWeight(1);
+            activeAction = action;
+            currentClip = clip;
+            playing = true;
+            document.getElementById('play-btn').textContent = '⏸ Tạm dừng';
+            renderClips();
+            updateFit();
+        }
+
+        function refreshActiveClip() {
+            if (currentClip) playClip(currentClip);
+        }
+
+        function cycleClip() {
+            if (!allClips.length) return;
+            const idx = currentClip ? allClips.findIndex(c => c.clip === currentClip) : 0;
+            playClipIndex((idx + 1) % allClips.length);
+        }
+
+        function togglePlay() {
+            playing = !playing;
+            document.getElementById('play-btn').textContent = playing ? '⏸ Tạm dừng' : '▶ Phát';
+        }
+
+        function setSpeed(v) {
+            speed = (Number(v) || 100) / 100;
+            document.getElementById('speed-val').textContent = speed.toFixed(2) + 'x';
+            if (activeAction) activeAction.setEffectiveTimeScale(speed);
+        }
+
+        // ==========================================
+        // SAVE / EXPORT / IMPORT
+        // ==========================================
+        function saveMapping() {
+            const map = { bones: {}, name: modelFileName, ts: Date.now() };
+            ROLES.forEach(r => { if (boneMap[r.key]) map.bones[r.key] = boneMap[r.key]; });
+            if (!Object.keys(map.bones).length) { log('Chưa gán xương nào.'); return; }
+            try {
+                localStorage.setItem(BONEMAP_DB, JSON.stringify(map));
+                const el = document.getElementById('save-info');
+                el.textContent = `Đã lưu cho model "${modelFileName}". Mở lại index.html — các clip nhảy sẽ tự remap cho model này.`;
+                log('Đã lưu bone map vào localStorage.');
+            } catch (err) {
+                log('Lỗi lưu: ' + err.message);
+            }
+        }
+
+        function exportMapping() {
+            const map = { bones: {}, name: modelFileName, ts: Date.now() };
+            ROLES.forEach(r => { if (boneMap[r.key]) map.bones[r.key] = boneMap[r.key]; });
+            const blob = new Blob([JSON.stringify(map, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'club3d-bonemap-' + (modelFileName.replace(/\.(glb|gltf)$/i, '') || 'model') + '.json';
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        }
+
+        function importMapping(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const data = JSON.parse(reader.result);
+                    const bones = data.bones || {};
+                    boneMap = {};
+                    ROLES.forEach(r => {
+                        const v = bones[r.key];
+                        if (v && modelBones.some(b => b.name === v)) boneMap[r.key] = v;
+                    });
+                    modelFileName = data.name || modelFileName;
+                    renderRoles();
+                    renderTree();
+                    updateMarks();
+                    updateFit();
+                    refreshActiveClip();
+                    log('Đã nhập JSON bản đồ xương.');
+                } catch (err) {
+                    log('JSON không hợp lệ: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // ==========================================
+        // HELPERS
+        // ==========================================
+        function esc(s) {
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // ==========================================
+        // BOOT
+        // ==========================================
+        initViewer();
+        loadDanceClips();
+    </script>
+</body>
+</html>
