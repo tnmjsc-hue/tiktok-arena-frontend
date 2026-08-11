@@ -129,6 +129,9 @@
         #club3d-char-clips { font-size: 10px; color: #9ea8b8; line-height: 2; }
         #club3d-char-clips .clip-opt { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; color: #cfe2ff; }
         #club3d-char-clips .clip-opt input { width: auto; }
+        #club3d-djclips-list { font-size: 10px; color: #9ea8b8; line-height: 2; }
+        #club3d-djclips-list .clip-opt { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; color: #cfe2ff; }
+        #club3d-djclips-list .clip-opt button { min-height: 20px; padding: 0 7px; font-size: 10px; }
         #club3d-char-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
         .char-item { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 8px; border-radius: 8px; background: #1a1d28; }
         .char-swatch { width: 40px; height: 40px; border-radius: 6px; background-size: cover; background-position: center; border: 1px solid #3b4252; }
@@ -324,6 +327,19 @@
                     <button class="btn-test" onclick="club3DResetDJModel()">↩️ Dùng model mặc định</button>
                 </div>
                 <div class="upload-hint" id="club3d-djmodel-status">DJ đang dùng model mặc định — DJ chỉ đứng cố định tại bàn DJ.</div>
+                <div class="upload-grid">
+                    <label class="upload-control">🎬 Nạp động tác clip cho DJ (GLB)
+                        <input type="file" id="club3d-djclip-upload" accept=".glb,.gltf" onchange="uploadClub3DDJClip(this.files[0])">
+                    </label>
+                    <button class="btn-test" onclick="club3DClearDJClips()">🗑 Xoá toàn bộ clip DJ</button>
+                </div>
+                <div class="upload-hint">Tải file .glb/.gltf chứa động tác nhảy (cùng rig với model DJ) để DJ múa theo clip riêng, xen kẽ với động tác mặc định. Model DJ nạp lên cũng tự thêm các động tác có sẵn trong file.</div>
+                <div class="form-group" id="club3d-djclips-list">Động tác DJ: chưa có clip riêng.</div>
+                <div class="form-group">
+                    <label>Hướng nhìn DJ: <span id="club3d-set-djyaw-val">270°</span></label>
+                    <input type="range" id="club3d-set-djyaw" min="0" max="360" step="1" value="270" oninput="club3DSetDJYaw(this.value)">
+                    <div class="upload-hint">Kéo thanh trượt để xoay người DJ đứng thẳng ra sàn nhảy (mặc định 270°).</div>
+                </div>
                 <div class="form-group">
                     <label>Quà tặng đổi DJ:
                         <select id="club3d-set-djgift" onchange="club3DSetField('djGift', this.value, false)"></select>
@@ -597,7 +613,8 @@
         };
         const CLUB3D_SET_DEFAULTS = {
             theme: 'neon', stage: '#150a24', glow: '#ff4dd8', djTable: '#1d1233', floor: '#0c0a16',
-            stageImage: null, videoUrl: null, djName: 'DJ', djColor: '#ff4dd8', djGift: '', djDuration: 20
+            stageImage: null, videoUrl: null, djName: 'DJ', djColor: '#ff4dd8', djGift: '', djDuration: 20,
+            djYaw: 270
         };
         let club3DSetConfig = (() => {
             try {
@@ -614,6 +631,7 @@
         let club3DDJTakenBy = null;
         let club3DDJTakeoverUntil = 0;
         let club3DDJBuildSeq = 0;
+        let club3DDJClips = [];
         const CLUB3D_DJ_SPOT = Object.freeze({ x: 0, z: -1.85 });
 
         function saveClub3DSetConfig() {
@@ -778,12 +796,17 @@
 
         async function buildClub3DDJ(name, color) {
             const seq = ++club3DDJBuildSeq;
+            const djPool = club3DDJClips.slice();
+            if (club3DDJModel && club3DDJModel.clips && club3DDJModel.clips.length) {
+                club3DDJModel.clips.forEach(c => { if (!djPool.some(x => x.name === c.name)) djPool.push(c); });
+            }
             const preset = {
                 name: String(name || club3DSetConfig.djName || 'DJ'),
                 tint: color || club3DSetConfig.djColor || '#ff4dd8',
                 scale: 1.0,
                 modelKey: club3DDJModel ? 'dj' : 'default',
-                clips: []
+                clips: [],
+                extraPool: djPool
             };
             let person = club3DAssets ? await buildClub3DPersonFromGLB(name, preset) : null;
             if (seq !== club3DDJBuildSeq) {
@@ -792,13 +815,13 @@
             }
             if (!person) person = buildClub3DPerson(preset);
             person.group.position.set(CLUB3D_DJ_SPOT.x, 0, CLUB3D_DJ_SPOT.z);
-            person.group.rotation.y = Math.PI / 2;
+            person.group.rotation.y = (club3DSetConfig.djYaw || 0) * Math.PI / 180;
             person.baseY = 0;
             person.mode = 'dance';
             person.intervalMin = 6;
             person.intervalMax = 11;
             person.speed = 1.6;
-            person.static = true;
+            person.static = false;
             person.user = String(name || club3DSetConfig.djName || 'DJ');
             person.phase = Math.random() * Math.PI * 2;
             if (!person.clipTimer) person.clipTimer = club3DTime + 2;
@@ -817,7 +840,8 @@
             club3DTempDJ = null;
             club3DDJTakenBy = null;
             buildClub3DDJ(club3DSetConfig.djName || 'DJ', club3DSetConfig.djColor || '#ff4dd8')
-                .then(p => { if (p) club3DDefaultDJ = p; });
+                .then(p => { if (p) club3DDefaultDJ = p; })
+                .catch(err => log('Club 3D: không dựng được DJ. (' + (err && err.message) + ')'));
         }
 
         function club3DDJTakeover(user) {
@@ -846,15 +870,16 @@
             for (const dj of [club3DDefaultDJ, club3DTempDJ]) {
                 if (!dj || !dj.group) continue;
                 const g = dj.group;
+                const djYaw = (club3DSetConfig.djYaw || 0) * Math.PI / 180;
                 if (dj.static) {
                     g.position.y = (dj.baseY || 0) + club3DFeetOffset;
-                    g.rotation.y = Math.PI / 2;
+                    g.rotation.y = djYaw;
                     continue;
                 }
                 g.position.y = (dj.baseY || 0) + club3DFeetOffset;
-                g.rotation.y = Math.PI / 2 + Math.sin(club3DTime * 0.8 + dj.phase) * 0.35;
-                if (dj.mixer) {
-                    if (club3DTime >= (dj.clipTimer || 0)) {
+                g.rotation.y = djYaw + Math.sin(club3DTime * 0.8 + dj.phase) * 0.35;
+                    if (dj.mixer) {
+                        if (club3DTime >= (dj.clipTimer || 0)) {
                         dj.clipTimer = club3DTime + Phaser.Math.FloatBetween(dj.intervalMin || 6, dj.intervalMax || 11);
                         const pool = (dj.clipPool && dj.clipPool.length) ? dj.clipPool : ((club3DAssets && club3DAssets.animClips) || []);
                         if (pool.length > 1) {
@@ -963,6 +988,14 @@
             sel.value = giftCatalog.has(current) ? current : '';
         }
 
+        function club3DSetDJYaw(deg) {
+            deg = (Math.round(Number(deg) || 0) + 360) % 360;
+            club3DSetConfig.djYaw = deg;
+            saveClub3DSetConfig();
+            const label = document.getElementById('club3d-set-djyaw-val');
+            if (label) label.textContent = deg + '°';
+        }
+
         function renderClub3DSetPanel() {
             const cfg = club3DSetConfig;
             const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
@@ -973,6 +1006,9 @@
             set('club3d-set-djname', cfg.djName);
             set('club3d-set-djcolor', cfg.djColor);
             set('club3d-set-djdur', cfg.djDuration);
+            set('club3d-set-djyaw', cfg.djYaw);
+            const yawLabel = document.getElementById('club3d-set-djyaw-val');
+            if (yawLabel) yawLabel.textContent = cfg.djYaw + '°';
             renderClub3DGiftSelect();
         }
 
@@ -1650,6 +1686,8 @@
                 };
                 log(`Club 3D: bộ GLB sẵn sàng (${merged.length} động tác nhảy).`);
                 renderClub3DClipOptions();
+                renderClub3DDJClips();
+                if (club3DScene) club3DSpawnDefaultDJ();
             }).catch(err => {
                 log('Club 3D: không tải được bộ GLB, dùng nhân vật low-poly. (' + err.message + ')');
             }).finally(() => {
@@ -1843,8 +1881,13 @@
 
             const allClips = (club3DAssets && club3DAssets.animClips) ? club3DAssets.animClips : [];
             let pool = allClips;
+            if (preset && preset.extraPool && preset.extraPool.length) {
+                const names = new Set(allClips.map(c => c.name));
+                pool = allClips.slice();
+                preset.extraPool.forEach(c => { if (!names.has(c.name)) { pool.push(c); names.add(c.name); } });
+            }
             if (preset && preset.clips && preset.clips.length) {
-                const wanted = allClips.filter(c => preset.clips.indexOf(c.name) >= 0);
+                const wanted = pool.filter(c => preset.clips.indexOf(c.name) >= 0);
                 if (wanted.length) pool = wanted;
             }
             let fitPool = [];
@@ -2571,6 +2614,78 @@
             if (el) el.textContent = 'DJ đang dùng model mặc định — DJ chỉ đứng cố định tại bàn DJ.';
             club3DSpawnDefaultDJ();
             log('Club 3D: DJ quay lại model mặc định.');
+        }
+
+        function renderClub3DDJClips() {
+            const box = document.getElementById('club3d-djclips-list');
+            if (!box) return;
+            if (!club3DDJClips.length) {
+                const defaults = (club3DAssets && club3DAssets.animClips && club3DAssets.animClips.length)
+                    ? club3DAssets.animClips.map(c => c.name).join(', ')
+                    : '';
+                box.innerHTML = defaults
+                    ? `<div class="upload-hint">Động tác DJ: chưa có clip riêng — DJ đang dùng ${club3DAssets.animClips.length} động tác mặc định (${defaults}). Nạp clip ở trên để DJ có bộ nhảy riêng.</div>`
+                    : '<div class="upload-hint">Động tác DJ: chưa có clip riêng — DJ sẽ dùng chung các động tác mặc định.</div>';
+                return;
+            }
+            box.innerHTML = '<div class="upload-hint">Động tác DJ đã nạp (' + club3DDJClips.length + '):</div>' +
+                club3DDJClips.map((c, i) => {
+                    const safeName = c.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    return `<label class="clip-opt">${safeName} <button class="btn-test" onclick="club3DRemoveDJClip(${i})">✕</button></label>`;
+                }).join('');
+        }
+
+        function uploadClub3DDJClip(file) {
+            if (!file) return;
+            if (!window.THREE || !THREE.GLTFLoader) {
+                log('Club 3D: Three.js chưa sẵn sàng, không nạp được clip DJ.');
+                return;
+            }
+            if (!/\.(glb|gltf)$/i.test(file.name)) {
+                log('Club 3D: hãy chọn file .glb hoặc .gltf chứa động tác cho DJ.');
+                return;
+            }
+            const url = URL.createObjectURL(file);
+            new THREE.GLTFLoader().load(url, gltf => {
+                URL.revokeObjectURL(url);
+                const anims = gltf.animations || [];
+                if (!anims.length) {
+                    log(`Club 3D: file ${file.name} không chứa động tác (animation).`);
+                    return;
+                }
+                let added = 0;
+                anims.forEach(c => {
+                    if (!club3DDJClips.some(x => x.name === c.name)) { club3DDJClips.push(c); added++; }
+                });
+                if (!added) {
+                    log(`Club 3D: các động tác trong ${file.name} đã có sẵn trong DJ.`);
+                    return;
+                }
+                renderClub3DDJClips();
+                if (club3DAssets) club3DSpawnDefaultDJ();
+                else if (!club3DAssetsLoading) loadClub3DAssets();
+                log(`Club 3D: đã nạp ${added} động tác cho DJ từ ${file.name}.`);
+            }, undefined, err => {
+                URL.revokeObjectURL(url);
+                log('Club 3D: không đọc được clip DJ GLB. (' + err.message + ')');
+            });
+        }
+
+        function club3DRemoveDJClip(index) {
+            const clip = club3DDJClips[index];
+            if (!clip) return;
+            club3DDJClips.splice(index, 1);
+            renderClub3DDJClips();
+            club3DSpawnDefaultDJ();
+            log(`Club 3D: đã xoá động tác DJ "${clip.name}".`);
+        }
+
+        function club3DClearDJClips() {
+            if (!club3DDJClips.length) return;
+            club3DDJClips = [];
+            renderClub3DDJClips();
+            club3DSpawnDefaultDJ();
+            log('Club 3D: đã xoá toàn bộ động tác clip riêng của DJ.');
         }
 
         function onClub3DTextureUpload(file) {

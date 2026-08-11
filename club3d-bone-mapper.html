@@ -243,7 +243,7 @@
             });
             cv.addEventListener('wheel', e => {
                 e.preventDefault();
-                camDist = Math.min(12, Math.max(2, camDist * (e.deltaY > 0 ? 1.1 : 0.9)));
+                camDist = Math.min(50, Math.max(1.2, camDist * (e.deltaY > 0 ? 1.08 : 0.92)));
             }, { passive: false });
 
             animate();
@@ -326,19 +326,35 @@
             modelInstance.traverse(o => { if (o.isBone) instanceBones[o.name] = o; });
             fitToFloor(modelInstance, 1.6);
             charGroup.add(modelInstance);
+            frameCamera();
             mixer = new THREE.AnimationMixer(modelInstance);
             allClips = [...danceClips, ...modelClips];
         }
 
-        function fitToFloor(obj, targetH) {
+        function fitToFloor(obj, target) {
             const box = new THREE.Box3().setFromObject(obj);
             const size = box.getSize(new THREE.Vector3());
-            const s = (targetH || 1.6) / Math.max(0.001, size.y || 1);
+            const maxDim = Math.max(size.x, size.y, size.z);
+            if (!isFinite(maxDim) || maxDim <= 1e-6) return false;
+            const s = (target || 1.6) / maxDim;
             obj.scale.setScalar(s);
             const b2 = new THREE.Box3().setFromObject(obj);
             obj.position.y -= b2.min.y;
             obj.position.x = 0;
             obj.position.z = 0;
+            return true;
+        }
+
+        // Đưa camera ra đủ xa để toàn bộ model (kể cả model rất to/rất rộng) nằm trọn trong view.
+        function frameCamera() {
+            if (!modelInstance) return;
+            const box = new THREE.Box3().setFromObject(modelInstance);
+            const sphere = box.getBoundingSphere(new THREE.Sphere());
+            const r = Math.max(sphere.radius, 0.4);
+            const vFov = camera.fov * Math.PI / 180;
+            const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+            const halfAng = Math.max(Math.min(Math.tan(vFov / 2), Math.tan(hFov / 2)), 0.1);
+            camDist = Math.min(50, Math.max(4.5, (r / halfAng) * 1.15));
         }
 
         function clearChar() {
