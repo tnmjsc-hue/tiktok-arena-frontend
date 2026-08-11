@@ -93,11 +93,14 @@
         body.panel-hidden { display: flex; align-items: center; justify-content: center; padding: 0; gap: 0; overflow: hidden; }
         body.panel-hidden #ui-panel { display: none; }
         body.panel-hidden #stage-shell { width: min(100vw, calc(100vh * 9 / 16)); height: min(100vh, calc(100vw * 16 / 9)); flex: 0 0 auto; }
+        body.landscape-mode #stage-shell { width: min(calc((100svh - 24px) * 16 / 9), calc(100vw - 356px)); aspect-ratio: 16 / 9; }
+        body.obs-mode.landscape-mode #stage-shell, body.panel-hidden.landscape-mode #stage-shell { width: min(100vw, calc(100vh * 16 / 9)); height: min(100vh, calc(100vw * 9 / 16)); }
         #obs-size-badge { display: none; position: fixed; top: 8px; right: 8px; z-index: 50; background: #000a; color: #9ee7ff; font: 11px monospace; padding: 4px 8px; border-radius: 6px; pointer-events: none; }
         body.obs-mode #obs-size-badge { display: block; }
         @media (max-width: 850px) {
             body { display: flex; flex-direction: column; align-items: center; padding: 8px; gap: 10px; }
             #stage-shell { width: min(100%, calc((100svh - 16px) * 9 / 16)); flex: 0 0 auto; }
+            body.landscape-mode #stage-shell { width: min(100%, calc((100svh - 16px) * 16 / 9)); }
             #ui-panel { width: min(100%, 540px); max-height: none; overflow: visible; }
             #log-box { min-height: 180px; }
         }
@@ -166,9 +169,17 @@
         </div>
         <div class="upload-hint">Mỗi chế độ có bảng điều khiển riêng bên dưới. Lựa chọn được đồng bộ sang cửa sổ OBS.</div>
         <button class="btn-obs" onclick="openObsWindow()">↗ Mở Cửa Sổ OBS</button>
-        <div class="upload-hint">Cửa sổ chỉ hiển thị sân đấu 9:16, không có bảng điều khiển.</div>
+        <div class="upload-hint">Cửa sổ chỉ hiển thị sân đấu, không có bảng điều khiển.</div>
+        <div class="form-group">
+            <label>Kiểu khung hình sân đấu:</label>
+            <select id="orient-select" onchange="setOrientation(this.value)">
+                <option value="portrait">📱 Dọc 9:16 (TikTok)</option>
+                <option value="landscape">🖥 Ngang 16:9 (TikTok LIVE Studio)</option>
+            </select>
+        </div>
+        <div class="upload-hint">Chọn trước khi mở OBS: Dọc = 540×960, Ngang = 1920×1080.</div>
         <button class="btn-obs" onclick="togglePanelHidden()">👁 Capture Ngay (Ẩn Bảng Điều Khiển)</button>
-        <div class="upload-hint">Ẩn bảng điều khiển ngay tại cửa sổ này, sân đấu phóng to toàn màn hình 9:16. Bấm lại để hiện bảng.</div>
+        <div class="upload-hint">Ẩn bảng điều khiển ngay tại cửa sổ này, sân đấu phóng to toàn màn hình theo kiểu khung hình đã chọn. Bấm lại để hiện bảng.</div>
 
         <div class="form-group">
             <label>Kết nối TikTok Live:</label>
@@ -292,6 +303,13 @@
                     <button class="btn-test" onclick="club3DClearStageImage()">🗑 Xoá ảnh nền</button>
                 </div>
                 <div class="upload-grid">
+                    <label class="upload-control">🎬 Video màn hình lớn
+                        <input type="file" id="club3d-set-video" accept="video/mp4,video/webm" onchange="club3DUploadStageVideo(this.files[0])">
+                    </label>
+                    <button class="btn-test" onclick="club3DClearStageVideo()">🗑 Tắt video</button>
+                </div>
+                <div class="upload-hint">Video chiếu trên màn hình lớn phía trước ảnh nền. Nên dùng file ngắn, nhỏ (dưới ~2MB) để lưu được vào cấu hình và đồng bộ sang OBS.</div>
+                <div class="upload-grid">
                     <label class="upload-control">Tên DJ mặc định
                         <input type="text" id="club3d-set-djname" maxlength="18" value="DJ" onchange="club3DSetField('djName', this.value || 'DJ', true)">
                     </label>
@@ -354,10 +372,12 @@
                 <button class="btn-test" onclick="club3DGenerateRandomVariants()">🎲 Tạo 6 nhân vật ngẫu nhiên</button>
                 <div id="club3d-char-list"></div>
             </details>
-            <div class="upload-hint">Bật camera để thấy các góc máy đổi liên tục (wide → cận mặt → DJ → bar → trần neon).</div>
+            <div class="upload-hint">Bật camera để thấy các góc máy đổi liên tục (wide → cận mặt → DJ → màn hình lớn).</div>
             <button class="btn-test" onclick="testClub3DSpawn()">👤 Test khán giả bước vào</button>
             <button class="btn-test" onclick="testClub3DComment()">💬 Test bình luận (gật đầu)</button>
             <button class="btn-test" onclick="testClub3DGift()">🎁 Test quà (punch-in cận mặt)</button>
+            <button class="btn-test" onclick="club3DResetFloor()">🗑 Xoá toàn bộ khán giả trên sàn</button>
+            <div class="upload-hint">Xoá sạch nhân vật đang đứng trên sàn. Khán giả mới bước vào sẽ tự xuất hiện lại.</div>
         </div>
 
         <label>Nhật ký sự kiện:</label>
@@ -385,6 +405,11 @@
                 if (w > 200 && h > 200) {
                     obsTarget.w = w;
                     obsTarget.h = h;
+                }
+                if (q.get('o') === 'landscape') {
+                    obsTarget.w = 1920;
+                    obsTarget.h = 1080;
+                    document.body.classList.add('landscape-mode');
                 }
             } catch {}
 
@@ -428,10 +453,16 @@
         function openObsWindow() {
             const obsUrl = new URL(window.location.href);
             obsUrl.searchParams.set('obs', '1');
+            const landscape = currentOrientation === 'landscape';
+            const w = landscape ? 1920 : 540;
+            const h = landscape ? 1080 : 960;
+            obsUrl.searchParams.set('o', landscape ? 'landscape' : 'portrait');
+            obsUrl.searchParams.set('w', String(w));
+            obsUrl.searchParams.set('h', String(h));
             obsDisplayWindow = window.open(
                 obsUrl.toString(),
                 'tiktok-arena-obs-display',
-                'popup=yes,width=540,height=960,resizable=yes,scrollbars=no'
+                `popup=yes,width=${w},height=${h},resizable=yes,scrollbars=no`
             );
 
             if (!obsDisplayWindow) {
@@ -554,7 +585,7 @@
         };
         const CLUB3D_SET_DEFAULTS = {
             theme: 'neon', stage: '#150a24', glow: '#ff4dd8', djTable: '#1d1233', floor: '#0c0a16',
-            stageImage: null, djName: 'DJ', djColor: '#ff4dd8', djGift: '', djDuration: 20
+            stageImage: null, videoUrl: null, djName: 'DJ', djColor: '#ff4dd8', djGift: '', djDuration: 20
         };
         let club3DSetConfig = (() => {
             try {
@@ -564,12 +595,14 @@
             return Object.assign({}, CLUB3D_SET_DEFAULTS);
         })();
         let club3DSetGroup = null;
+        let club3DSetVideoTexture = null;
+        let club3DSetVideoEl = null;
         let club3DDefaultDJ = null;
         let club3DTempDJ = null;
         let club3DDJTakenBy = null;
         let club3DDJTakeoverUntil = 0;
         let club3DDJBuildSeq = 0;
-        const CLUB3D_DJ_SPOT = Object.freeze({ x: -2.6, z: -1.55 });
+        const CLUB3D_DJ_SPOT = Object.freeze({ x: 0, z: -1.85 });
 
         function saveClub3DSetConfig() {
             try { localStorage.setItem(CLUB3D_SET_KEY, JSON.stringify(club3DSetConfig)); } catch {}
@@ -584,6 +617,14 @@
         }
 
         function disposeClub3DSet() {
+            if (club3DSetVideoEl) {
+                try { club3DSetVideoEl.pause(); } catch {}
+                club3DSetVideoEl = null;
+            }
+            if (club3DSetVideoTexture) {
+                try { club3DSetVideoTexture.dispose(); } catch {}
+                club3DSetVideoTexture = null;
+            }
             if (club3DSetGroup) {
                 club3DSetGroup.traverse(obj => { if (obj.isMesh) disposeClub3DMesh(obj); });
                 club3DScene.remove(club3DSetGroup);
@@ -650,12 +691,47 @@
             platEdge.position.set(0, 0.22, -2.14);
             group.add(platEdge);
 
-            // Bàn DJ (bên trái)
+            // Màn hình lớn chiếu video (phía trước ảnh nền sân khấu)
+            const frame = new THREE.Mesh(
+                new THREE.BoxGeometry(7.7, 4.4, 0.16),
+                new THREE.MeshStandardMaterial({ color: 0x14161d, roughness: 0.7, metalness: 0.3 })
+            );
+            frame.position.set(0, 2.2, -3.25);
+            frame.castShadow = true;
+            group.add(frame);
+            let screenMat;
+            if (cfg.videoUrl) {
+                screenMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                try {
+                    const video = document.createElement('video');
+                    video.src = cfg.videoUrl;
+                    video.muted = true;
+                    video.loop = true;
+                    video.playsInline = true;
+                    video.setAttribute('playsinline', '');
+                    video.crossOrigin = 'anonymous';
+                    video.play().catch(() => {});
+                    const tex = new THREE.VideoTexture(video);
+                    if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+                    tex.minFilter = THREE.LinearFilter;
+                    tex.magFilter = THREE.LinearFilter;
+                    screenMat.map = tex;
+                    club3DSetVideoTexture = tex;
+                    club3DSetVideoEl = video;
+                } catch {}
+            } else {
+                screenMat = new THREE.MeshBasicMaterial({ color: 0x05060a });
+            }
+            const screen = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 4.05), screenMat);
+            screen.position.set(0, 2.2, -3.16);
+            group.add(screen);
+
+            // Bàn DJ (giữa sân khấu)
             const djTable = new THREE.Mesh(
                 new THREE.BoxGeometry(1.7, 0.8, 0.7),
                 new THREE.MeshStandardMaterial({ color: cfg.djTable, roughness: 0.6 })
             );
-            djTable.position.set(-2.6, 0.4, -1.1);
+            djTable.position.set(0, 0.4, -1.3);
             djTable.castShadow = true;
             group.add(djTable);
             for (const [dx, color] of [[-0.35, cfg.glow], [0, 0x00cfff], [0.35, 0xffd166]]) {
@@ -663,7 +739,7 @@
                     new THREE.CylinderGeometry(0.26, 0.26, 0.06, 20),
                     new THREE.MeshBasicMaterial({ color })
                 );
-                disc.position.set(-2.6 + dx, 0.83, -1.1);
+                disc.position.set(dx, 0.83, -1.3);
                 group.add(disc);
             }
 
@@ -832,6 +908,28 @@
             rebuildClub3DSet();
             const el = document.getElementById('club3d-set-status');
             if (el) el.textContent = 'Đã xoá ảnh nền.';
+        }
+
+        function club3DUploadStageVideo(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                club3DSetConfig.videoUrl = reader.result;
+                saveClub3DSetConfig();
+                rebuildClub3DSet();
+                const el = document.getElementById('club3d-set-status');
+                if (el) el.textContent = `Đã chiếu video: ${file.name}`;
+                log(`Club 3D: màn hình lớn đang chiếu "${file.name}".`);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function club3DClearStageVideo() {
+            club3DSetConfig.videoUrl = null;
+            saveClub3DSetConfig();
+            rebuildClub3DSet();
+            const el = document.getElementById('club3d-set-status');
+            if (el) el.textContent = 'Đã tắt video màn hình.';
         }
 
         function renderClub3DGiftSelect() {
@@ -1320,6 +1418,33 @@
             }
         });
 
+        // ==========================================
+        // KIỂU KHUNG HÌNH: DỌC 9:16 / NGANG 16:9
+        // ==========================================
+        const ORIENT_KEY = 'tiktok-arena-orientation';
+        let currentOrientation = 'portrait';
+        try { currentOrientation = localStorage.getItem(ORIENT_KEY) === 'landscape' ? 'landscape' : 'portrait'; } catch {}
+
+        function setOrientation(o) {
+            if (o !== 'landscape' && o !== 'portrait') return;
+            currentOrientation = o;
+            try { localStorage.setItem(ORIENT_KEY, o); } catch {}
+            document.body.classList.toggle('landscape-mode', o === 'landscape');
+            const sel = document.getElementById('orient-select');
+            if (sel) sel.value = o;
+            resizeClub3D();
+            setTimeout(() => { try { game.scale.refresh(); } catch {} }, 80);
+        }
+
+        function initOrientationUI() {
+            if (OBS_MODE) return;
+            const sel = document.getElementById('orient-select');
+            if (sel) sel.value = currentOrientation;
+            document.body.classList.toggle('landscape-mode', currentOrientation === 'landscape');
+        }
+
+        initOrientationUI();
+
         // BAR CLUB 3D (demo — Three.js, low-poly)
         // ==========================================
         let club3DBuilt = false;
@@ -1342,9 +1467,9 @@
             { name: 'establish', pos: [0, 3.1, 6.6], look: [0, 0.9, -0.4], fov: 52, holdMin: 2.4, holdMax: 3.4 },
             { name: 'dance_pull', pos: [0, 1.7, 3.1], look: [0, 0.7, 0.2], fov: 55, holdMin: 2.0, holdMax: 2.8 },
             { name: 'low_angle', pos: [0, 0.4, 2.5], look: [0, 0.95, -0.3], fov: 58, holdMin: 1.8, holdMax: 2.6 },
-            { name: 'dj', pos: [-2.6, 1.85, -2.1], look: [-2.6, 0.85, -1.0], fov: 45, holdMin: 1.8, holdMax: 2.5 },
-            { name: 'stage', pos: [0, 2.2, 2.6], look: [0, 1.0, -1.6], fov: 52, holdMin: 2.0, holdMax: 2.8 },
-            { name: 'corner_sweep', pos: [1.7, 2.2, 2.3], look: [-1.1, 0.8, 0.3], fov: 52, holdMin: 2.0, holdMax: 2.8 }
+            { name: 'dj', pos: [0, 1.6, 0.4], look: [0, 0.9, -1.5], fov: 45, holdMin: 1.8, holdMax: 2.5 },
+            { name: 'stage', pos: [0, 2.1, 3.6], look: [0, 1.5, -1.3], fov: 50, holdMin: 2.0, holdMax: 2.8 },
+            { name: 'corner_sweep', pos: [2.3, 1.9, 2.4], look: [-0.6, 1.3, -1.4], fov: 50, holdMin: 2.0, holdMax: 2.8 }
         ];
         const CLUB3D_SPOTS = Object.freeze([
             { x: -1.2, z: 1.1 }, { x: -0.4, z: 1.4 }, { x: 0.4, z: 1.4 }, { x: 1.2, z: 1.1 },
@@ -1353,6 +1478,23 @@
             { x: 0, z: 1.0 }, { x: -0.6, z: -0.9 }, { x: 0.6, z: -0.9 }, { x: -2.3, z: -1.0 }
         ]);
         let club3DMaxChars = 14;
+
+        // Chọn vị trí trống trên sàn: không trùng chỗ người khác đang đứng.
+        // preferX/preferZ: nếu có, chọn chỗ trống gần toạ độ đó nhất.
+        function club3DFindFreeSpot(preferX, preferZ, exclude) {
+            const free = CLUB3D_SPOTS.filter(s =>
+                !club3DCharacters.some(c => c !== exclude && c.spot && c.spot.x === s.x && c.spot.z === s.z)
+            );
+            const pool = free.length ? free : CLUB3D_SPOTS;
+            if (preferX == null) return pool[club3DSpotIndex % pool.length];
+            let best = pool[0];
+            let bd = Infinity;
+            for (const s of pool) {
+                const d = (s.x - preferX) * (s.x - preferX) + (s.z - preferZ) * (s.z - preferZ);
+                if (d < bd) { bd = d; best = s; }
+            }
+            return best;
+        }
 
         // ==========================================
         // BỘ ASSET GLB — đổi file trong thư mục glb3d/ mà không cần sửa code:
@@ -1558,10 +1700,6 @@
             return total > 0 && hits / total >= 0.4;
         }
 
-        function club3DRandomSpot() {
-            return Phaser.Math.RND.pick(CLUB3D_SPOTS);
-        }
-
         async function buildClub3DPersonFromGLB(user, preset) {
             if (!window.THREE || !THREE.SkeletonUtils || !club3DAssets) return null;
             const modelKey = preset && preset.modelKey ? preset.modelKey : 'default';
@@ -1689,7 +1827,7 @@
             p3.position.set(0, 3.6, 0.8);
             scene.add(p3);
             const barSpot = new THREE.PointLight(0xffd166, 12, 9);
-            barSpot.position.set(2.3, 1.6, 1.6);
+            barSpot.position.set(0, 3.0, -0.9);
             scene.add(barSpot);
 
             buildClub3DSet(scene);
@@ -1845,7 +1983,7 @@
                     }
                 } else {
                     if (club3DTime >= (c.danceUntil || 0)) {
-                        const spot = club3DRandomSpot();
+                        const spot = club3DFindFreeSpot(g.position.x, g.position.z, c);
                         c.mode = 'walk';
                         c.walkFromX = g.position.x;
                         c.walkFromZ = g.position.z;
@@ -1903,6 +2041,44 @@
                         if (c.mode === 'dance') c.mixer.update(dt);
                     }
                 }
+
+                // Chống chồng lấn: đẩy các nhân vật đứng quá gần ra xa nhau,
+                // giữ mỗi người quanh ô của mình và không đi ra khỏi sàn.
+                try {
+                    for (let i = 0; i < club3DCharacters.length; i++) {
+                        const a = club3DCharacters[i];
+                        const ga = a.group.position;
+                        for (let j = i + 1; j < club3DCharacters.length; j++) {
+                            const b = club3DCharacters[j];
+                            const gb = b.group.position;
+                            const dx = gb.x - ga.x;
+                            const dz = gb.z - ga.z;
+                            const d2 = dx * dx + dz * dz;
+                            if (d2 < 0.49 && d2 > 1e-8) {
+                                const d = Math.sqrt(d2);
+                                const push = (0.7 - d) * 0.5;
+                                const nx = dx / d;
+                                const nz = dz / d;
+                                ga.x -= nx * push;
+                                ga.z -= nz * push;
+                                gb.x += nx * push;
+                                gb.z += nz * push;
+                            }
+                        }
+                        if (a.mode === 'dance' && a.spot) {
+                            const rx = ga.x - a.spot.x;
+                            const rz = ga.z - a.spot.z;
+                            const r = Math.hypot(rx, rz);
+                            const maxR = 0.45;
+                            if (r > maxR) {
+                                ga.x = a.spot.x + rx / r * maxR;
+                                ga.z = a.spot.z + rz / r * maxR;
+                            }
+                        }
+                        ga.x = Math.max(-2.7, Math.min(2.7, ga.x));
+                        ga.z = Math.max(-1.9, Math.min(2.1, ga.z));
+                    }
+                } catch {}
 
                 club3DAnimateDJs(dt);
 
@@ -2474,13 +2650,22 @@
             log('Club 3D: punch-in cận mặt người nhận quà.');
         }
 
+        function club3DResetFloor() {
+            while (club3DCharacters.length) {
+                club3DRemoveCharacter(club3DCharacters.pop());
+            }
+            club3DSpotIndex = 0;
+            club3DUpdateCountLabel();
+            log('Club 3D: đã xoá toàn bộ khán giả đang đứng trên sàn.');
+        }
+
         async function club3DSpawnViewer(user, presetOverride) {
             if (!club3DVisible || !club3DRenderer) return;
             if (!club3DAssets && !club3DAssetsLoading) loadClub3DAssets();
             while (club3DCharacters.length >= club3DMaxChars) {
                 club3DRemoveCharacter(club3DCharacters.shift());
             }
-            const spot = CLUB3D_SPOTS[club3DSpotIndex % CLUB3D_SPOTS.length];
+            const spot = club3DFindFreeSpot();
             club3DSpotIndex += 1;
             const isGLB = !!club3DAssets;
             const preset = presetOverride || (club3DAutoAssign && club3DCharPool.length ? Phaser.Math.RND.pick(club3DCharPool) : null);
