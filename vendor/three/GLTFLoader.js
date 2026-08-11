@@ -196,7 +196,8 @@
 
 			} else if ( data instanceof ArrayBuffer ) {
 
-				const magic = THREE.LoaderUtils.decodeText( new Uint8Array( data, 0, 4 ) );
+				const bytes = new Uint8Array( data );
+				const magic = THREE.LoaderUtils.decodeText( bytes.slice( 0, 4 ) );
 				if ( magic === BINARY_EXTENSION_HEADER_MAGIC ) {
 
 					try {
@@ -212,9 +213,34 @@
 
 					json = JSON.parse( extensions[ EXTENSIONS.KHR_BINARY_GLTF ].content );
 
+				} else if ( bytes.length >= 20 &&
+						bytes[ 0 ] === 0x67 && bytes[ 2 ] === 0x54 && bytes[ 3 ] === 0x46 &&
+						bytes[ 1 ] !== 0x6C &&
+						bytes[ 4 ] === 0x02 &&
+						THREE.LoaderUtils.decodeText( bytes.slice( 16, 20 ) ) === 'JSON' ) {
+
+					// Magic của file GLB bị hỏng (byte "l" trong "glTF" thành 0x10).
+					// Tự sửa magic trước khi phân tích để vẫn đọc được các file .glb này.
+					const fixed = new ArrayBuffer( data.byteLength );
+					new Uint8Array( fixed ).set( bytes );
+					new Uint8Array( fixed )[ 1 ] = 0x6C;
+
+					try {
+
+						extensions[ EXTENSIONS.KHR_BINARY_GLTF ] = new GLTFBinaryExtension( fixed );
+
+					} catch ( error ) {
+
+						if ( onError ) onError( error );
+						return;
+
+					}
+
+					json = JSON.parse( extensions[ EXTENSIONS.KHR_BINARY_GLTF ].content );
+
 				} else {
 
-					json = JSON.parse( THREE.LoaderUtils.decodeText( new Uint8Array( data ) ) );
+					json = JSON.parse( THREE.LoaderUtils.decodeText( bytes ) );
 
 				}
 
