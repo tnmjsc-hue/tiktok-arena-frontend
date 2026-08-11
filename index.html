@@ -343,6 +343,11 @@
                         Tự áp nhân vật ngẫu nhiên cho khán giả mới
                     </label>
                 </div>
+                <div class="form-group">
+                    <label for="club3d-feet-offset">Kéo chân nhân vật sát sàn: <span id="club3d-feet-offset-val">0 cm</span></label>
+                    <input type="range" id="club3d-feet-offset" min="-50" max="50" step="1" value="0" oninput="setClub3DFeetOffset(this.value)">
+                    <div class="upload-hint">Kéo thanh trượt để nâng/hạ nhân vật cho bàn chân trùng sát mặt sàn (khi model nổi lơ lửng hoặc chìm xuống).</div>
+                </div>
                 <h3>Model gốc (có xương)</h3>
                 <label class="upload-control">
                     📦 Chọn model GLB
@@ -842,11 +847,11 @@
                 if (!dj || !dj.group) continue;
                 const g = dj.group;
                 if (dj.static) {
-                    g.position.y = (dj.baseY || 0) + 0.015 * Math.sin(club3DTime * 1.4 + dj.phase);
+                    g.position.y = (dj.baseY || 0) + club3DFeetOffset;
                     g.rotation.y = Math.PI / 2;
                     continue;
                 }
-                g.position.y = (dj.baseY || 0) + 0.04 * Math.abs(Math.sin(club3DTime * 2 + dj.phase));
+                g.position.y = (dj.baseY || 0) + club3DFeetOffset;
                 g.rotation.y = Math.PI / 2 + Math.sin(club3DTime * 0.8 + dj.phase) * 0.35;
                 if (dj.mixer) {
                     if (club3DTime >= (dj.clipTimer || 0)) {
@@ -857,8 +862,9 @@
                             const next = others.length ? Phaser.Math.RND.pick(others) : Phaser.Math.RND.pick(pool);
                             if (next) {
                                 try {
+                                    const bm = club3DBoneMapGet();
                                     dj.mixer.stopAllAction();
-                                    dj.mixer.clipAction(next, dj.model).play();
+                                    dj.mixer.clipAction(club3DRemapClipToModel(next, dj.model, bm && bm.bones), dj.model).play();
                                     dj.clipName = next.name;
                                 } catch {}
                             }
@@ -1492,6 +1498,26 @@
             { x: 0, z: 1.0 }, { x: -0.6, z: -0.9 }, { x: 0.6, z: -0.9 }, { x: -2.3, z: -1.0 }
         ]);
         let club3DMaxChars = 14;
+        const CLUB3D_FEET_OFFSET_KEY = 'tiktok-arena-club3d-feet-offset-v1';
+        let club3DFeetOffset = 0;
+
+        function setClub3DFeetOffset(value) {
+            club3DFeetOffset = Math.max(-0.5, Math.min(0.5, (Number(value) || 0) / 100));
+            try { localStorage.setItem(CLUB3D_FEET_OFFSET_KEY, String(club3DFeetOffset)); } catch {}
+            const label = document.getElementById('club3d-feet-offset-val');
+            if (label) label.textContent = `${Math.round(club3DFeetOffset * 100)} cm`;
+        }
+
+        function initClub3DFeetOffset() {
+            try {
+                const saved = parseFloat(localStorage.getItem(CLUB3D_FEET_OFFSET_KEY));
+                if (!isNaN(saved)) club3DFeetOffset = Math.max(-0.5, Math.min(0.5, saved));
+            } catch {}
+            const slider = document.getElementById('club3d-feet-offset');
+            if (slider) slider.value = String(Math.round(club3DFeetOffset * 100));
+            const label = document.getElementById('club3d-feet-offset-val');
+            if (label) label.textContent = `${Math.round(club3DFeetOffset * 100)} cm`;
+        }
 
         // Chọn vị trí trống trên sàn: không trùng chỗ người khác đang đứng.
         // preferX/preferZ: nếu có, chọn chỗ trống gần toạ độ đó nhất.
@@ -1546,6 +1572,56 @@
         let club3DDJModel = null;
         const club3DModelRegistry = {};
         const CLUB3D_CHAR_DB = 'tiktok-arena-club3d-chars-v1';
+
+        // ==========================================
+        // BONE MAP — gán xương cho model upload tùy ý (tạo bằng club3d-bone-mapper.html)
+        // Bản đồ lưu dạng: { bones: { root/spine/chest/head/arm_l/arm_r/leg_l/leg_r: 'tên xương thật' } }
+        // Các clip nhảy (dance_house, dance_pop...) animate tên xương chuẩn: arm_l, arm_r, root, chest.
+        // Nếu model KHÔNG có xương tên chuẩn mà CÓ tên trong bản đồ -> tự đổi tên track clip cho khớp.
+        // ==========================================
+        const CLUB3D_BONEMAP_DB = 'tiktok-arena-club3d-bonemap-v1';
+        const CLUB3D_BONEROLE_KEYS = ['root', 'spine', 'chest', 'head', 'arm_l', 'arm_r', 'leg_l', 'leg_r'];
+
+        function club3DBoneMapGet() {
+            try {
+                const raw = localStorage.getItem(CLUB3D_BONEMAP_DB);
+                if (!raw) return null;
+                const m = JSON.parse(raw);
+                return (m && m.bones && typeof m.bones === 'object') ? m : null;
+            } catch (err) { return null; }
+        }
+
+        function club3DModelBoneNames(root) {
+            const names = [];
+            root.traverse(o => { if (o.isBone) names.push(o.name); });
+            return names;
+        }
+
+        // Trả về clip (bản sao) có track đổi sang tên xương thật của model theo bản đồ.
+        // Model nào đã có sẵn tên xương chuẩn thì giữ nguyên clip gốc (không remap).
+        function club3DRemapClipToModel(clip, model, boneMap) {
+            if (!clip || !model || !boneMap) return clip;
+            const names = club3DModelBoneNames(model);
+            if (!names.length) return clip;
+            const has = n => names.indexOf(n) >= 0;
+            const tracks = clip.tracks || [];
+            let changed = false;
+            const out = [];
+            for (const t of tracks) {
+                const dot = t.name.lastIndexOf('.');
+                if (dot <= 0) { out.push(t); continue; }
+                const bone = t.name.slice(0, dot);
+                const prop = t.name.slice(dot + 1);
+                if (!boneMap[bone] || has(bone) || !has(boneMap[bone])) { out.push(t); continue; }
+                const nt = t.clone();
+                nt.name = boneMap[bone] + '.' + prop;
+                out.push(nt);
+                changed = true;
+            }
+            if (!changed) return clip;
+            try { return new THREE.AnimationClip(clip.name, clip.duration, out); }
+            catch (err) { return clip; }
+        }
 
         function loadClub3DAssets() {
             if (club3DAssets || club3DAssetsLoading || !window.THREE || !THREE.GLTFLoader) return;
@@ -1700,6 +1776,14 @@
             const boneNames = [];
             root.traverse(o => { if (o.isBone) boneNames.push(o.name.toLowerCase()); });
             if (!boneNames.length) return false;
+            const boneMap = club3DBoneMapGet();
+            const mapped = {};
+            if (boneMap && boneMap.bones) {
+                Object.keys(boneMap.bones).forEach(k => {
+                    const v = boneMap.bones[k];
+                    if (typeof v === 'string' && v) mapped[k.toLowerCase()] = v.toLowerCase();
+                });
+            }
             const tracks = clips[0].tracks || [];
             let total = 0;
             let hits = 0;
@@ -1710,7 +1794,8 @@
                 const bone = dot > 0 ? n.slice(0, dot).toLowerCase() : '';
                 if (!bone) continue;
                 total++;
-                if (boneNames.indexOf(bone) >= 0 || boneNames.some(b => b === bone || b.indexOf(bone) >= 0 || bone.indexOf(b) >= 0)) hits++;
+                const m = mapped[bone];
+                if (boneNames.indexOf(bone) >= 0 || (m && boneNames.indexOf(m) >= 0) || boneNames.some(b => b === bone || b.indexOf(bone) >= 0 || bone.indexOf(b) >= 0)) hits++;
             }
             return total > 0 && hits / total >= 0.4;
         }
@@ -1765,12 +1850,14 @@
             let fitPool = [];
             if (club3DClipsFitSkeleton(model, pool)) fitPool = pool;
             const clip = fitPool.length ? Phaser.Math.RND.pick(fitPool) : null;
+            const boneMapForModel = club3DBoneMapGet();
+            const useClip = clip ? club3DRemapClipToModel(clip, model, boneMapForModel && boneMapForModel.bones) : null;
             let mixer = new THREE.AnimationMixer(model);
-            if (!clip) {
+            if (!useClip) {
                 try { mixer.stopAllAction(); mixer = null; } catch {}
             } else {
                 try {
-                    const action = mixer.clipAction(clip, model);
+                    const action = mixer.clipAction(useClip, model);
                     if (!action) {
                         mixer.stopAllAction();
                         mixer = null;
@@ -2016,9 +2103,7 @@
                     }
                 }
 
-                const isDancing = c.mode === 'dance' || c.mode === 'walkin';
-                const bob = Math.abs(Math.sin(club3DTime * speed * 1.4 + c.phase));
-                g.position.y = c.baseY + (c.jumpY || 0) + bob * (isDancing ? 0.09 : 0.02);
+                g.position.y = c.baseY + club3DFeetOffset + (c.jumpY || 0);
 
                 if (c.mode === 'walkin' || c.mode === 'walk') {
                     const st = Math.sin(c.walkProgress * Math.PI * 6);
@@ -2053,8 +2138,9 @@
                                 const next = others.length ? Phaser.Math.RND.pick(others) : Phaser.Math.RND.pick(pool);
                                 if (next) {
                                     try {
+                                        const bm = club3DBoneMapGet();
                                         c.mixer.stopAllAction();
-                                        c.mixer.clipAction(next, c.model).play();
+                                        c.mixer.clipAction(club3DRemapClipToModel(next, c.model, bm && bm.bones), c.model).play();
                                         c.clipName = next.name;
                                     } catch {}
                                 }
@@ -2448,6 +2534,7 @@
                 const el = document.getElementById('club3d-model-status');
                 if (el) el.textContent = `Đang dùng: ${file.name}`;
                 log(`Club 3D: đã nạp model ${file.name} (${(gltf.animations || []).length} động tác trong model).`);
+                log('Club 3D: nếu model không nhảy (tên xương khác), hãy mở club3d-bone-mapper.html để gán xương.');
             }, undefined, err => {
                 URL.revokeObjectURL(url);
                 log('Club 3D: không đọc được model GLB. (' + err.message + ')');
@@ -2860,6 +2947,7 @@
             log("Game đã sẵn sàng!");
             scheduleSparring(900);
             restoreCustomFighterAtlases();
+            initClub3DFeetOffset();
             initClub3DCharacterPanel();
             renderClub3DSetPanel();
             applyMode();
