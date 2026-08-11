@@ -60,7 +60,7 @@
 
     <div id="left">
         <div id="viewer"></div>
-        <div id="viewer-hint">Chế độ Xoay camera: kéo để xoay · Lăn để zoom | Chế độ Xoay xương: bấm chọn xương, kéo để xoay</div>
+        <div id="viewer-hint">Xoay camera: kéo xoay · lăn zoom | Xoay xương: bấm chọn, kéo xoay | Đặt vị trí: bấm vào sàn/mô hình để đặt root</div>
     </div>
 
     <div id="right">
@@ -84,8 +84,9 @@
             <div class="mode-row">
                 <button id="btn-cam" class="active" onclick="setMouseMode('camera')">🔄 Xoay camera</button>
                 <button id="btn-bone" class="ghost" onclick="setMouseMode('bone')">🦴 Xoay xương</button>
+                <button id="btn-place" class="ghost" onclick="setMouseMode('place')">🎯 Đặt vị trí</button>
             </div>
-            <div class="hint" style="margin-top:5px;">Xoay xương: bấm vào khớp trên mô hình để chọn, kéo trái/phải xoay quanh trục Y, kéo lên/xuống quanh trục X.</div>
+            <div class="hint" style="margin-top:5px;">Xoay xương: bấm vào khớp trên mô hình để chọn, kéo trái/phải quanh trục Y, lên/xuống quanh trục X. Đặt vị trí: bấm vào sàn/mô hình để đưa nhân vật đến đó (ghi tọa độ root), chấm đỏ là đường đi qua các keyframe root.</div>
         </div>
 
         <div class="box">
@@ -190,8 +191,12 @@
         let markerGroup = null;
         let markers = {};
         const markerGeo = new THREE.SphereGeometry(0.06, 16, 16);
+        const discGeo = new THREE.CircleGeometry(0.16, 24);
         const matSel = new THREE.MeshBasicMaterial({ color: 0x00cfff });
         const matKey = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.9 });
+        const matPlace = new THREE.MeshBasicMaterial({ color: 0xffd166 });
+        const matPath = new THREE.MeshBasicMaterial({ color: 0xff5c73, transparent: true, opacity: 0.55 });
+        const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
         // ==========================================
         // THREE SETUP
@@ -245,6 +250,7 @@
                 lastX = e.clientX;
                 lastY = e.clientY;
                 if (mouseMode === 'bone') clickPick(e);
+                else if (mouseMode === 'place') clickPlace(e);
             });
             window.addEventListener('pointerup', () => dragging = false);
             window.addEventListener('pointermove', e => {
@@ -255,7 +261,7 @@
                 lastY = e.clientY;
                 if (mouseMode === 'camera') {
                     yaw += dx * 0.01;
-                } else {
+                } else if (mouseMode === 'bone') {
                     dragPose(dx, dy);
                 }
             });
@@ -551,36 +557,92 @@
             syncPoseInputs(selectedKey);
         }
 
+        function clickPlace(e) {
+            if (!modelInstance) return;
+            const cv = renderer.domElement;
+            const rect = cv.getBoundingClientRect();
+            pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+            const pt = new THREE.Vector3();
+            if (!raycaster.ray.intersectPlane(floorPlane, pt)) return;
+            charGroup.updateMatrixWorld(true);
+            const local = modelInstance.worldToLocal(pt.clone());
+            const rp = restPos[boneMap['root']] || new THREE.Vector3();
+            const p = poseOf('root');
+            p.px = Math.round((local.x - rp.x) * 1000) / 1000;
+            p.pz = Math.round((local.z - rp.z) * 1000) / 1000;
+            applyPose('root');
+            syncPoseInputs('root');
+            selectedKey = 'root';
+            renderBoneList();
+            renderKeyList();
+            log('Root → tọa độ x=' + (rp.x + p.px).toFixed(2) + ' y=' + (rp.y + p.py).toFixed(2) + ' z=' + (rp.z + p.pz).toFixed(2) + ' — bấm ＋ Keyframe để ghi.');
+        }
+
         function setMouseMode(m) {
             mouseMode = m;
             document.getElementById('btn-cam').className = m === 'camera' ? 'active' : 'ghost';
             document.getElementById('btn-bone').className = m === 'bone' ? 'active' : 'ghost';
+            document.getElementById('btn-place').className = m === 'place' ? 'active' : 'ghost';
+            renderer.domElement.style.cursor = m === 'place' ? 'crosshair' : (m === 'bone' ? 'pointer' : 'grab');
         }
 
         function updateMarkers() {
             if (!modelInstance) return;
             charGroup.updateMatrixWorld(true);
-            const roles = {};
-            ROLES.forEach(r => { if (boneMap[r.key]) roles[r.key] = boneMap[r.key]; });
             const active = new Set();
+
             ROLES.forEach(r => {
-                const bn = roles[r.key];
+                const bn = boneMap[r.key];
                 if (!bn || !instanceBones[bn]) return;
-                const hasKey = keyframes[r.key].length > 0;
-                if (!hasKey && selectedKey !== r.key) return;
+                const show = selectedKey === r.key || keyframes[r.key].length > 0;
+                if (!show) return;
                 const m = ensureMarker(r.key);
                 m.position.copy(instanceBones[bn].getWorldPosition(new THREE.Vector3()));
                 m.material = selectedKey === r.key ? matSel : matKey;
                 m.visible = true;
                 active.add(r.key);
             });
+
+            const rb = boneMap['root'] && instanceBones[boneMap['root']];
+            if (rb) {
+                const rwp = rb.getWorldPosition(new THREE.Vector3());
+                const m = ensureMarker('root-pos');
+                m.position.copy(rwp);
+                m.material = matPlace;
+                m.visible = true;
+                active.add('root-pos');
+                const d = ensureMarker('root-disc', discGeo, matPlace);
+                d.rotation.x = -Math.PI / 2;
+                d.position.set(rwp.x, 0, rwp.z);
+                d.visible = true;
+                active.add('root-disc');
+            }
+
+            const rootKeys = keyframes['root'];
+            const rp = restPos[boneMap['root']] || new THREE.Vector3();
+            rootKeys.forEach((k, i) => {
+                const v = new THREE.Vector3(rp.x + k.px, rp.y + k.py, rp.z + k.pz);
+                const w = modelInstance.localToWorld(v);
+                const m = ensureMarker('path-' + i);
+                m.position.copy(w);
+                m.material = matPath;
+                m.visible = true;
+                active.add('path-' + i);
+            });
+            for (let i = rootKeys.length; i < 256; i++) {
+                const m = markers['path-' + i];
+                if (m) m.visible = false;
+            }
+
             Object.keys(markers).forEach(n => { if (!active.has(n)) markers[n].visible = false; });
         }
 
-        function ensureMarker(name) {
+        function ensureMarker(name, geo, mat) {
             let m = markers[name];
             if (!m) {
-                m = new THREE.Mesh(markerGeo, matSel);
+                m = new THREE.Mesh(geo || markerGeo, mat || matSel);
                 m.visible = false;
                 markerGroup.add(m);
                 markers[name] = m;
