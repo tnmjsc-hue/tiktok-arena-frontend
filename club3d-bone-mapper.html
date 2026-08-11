@@ -53,7 +53,7 @@
 
     <div id="left">
         <div id="viewer"></div>
-        <div id="viewer-hint">Kéo để xoay · Lăn chuột để zoom</div>
+        <div id="viewer-hint">Kéo để xoay · Lăn chuột để zoom · Bấm vào mô hình để chọn xương</div>
     </div>
 
     <div id="right">
@@ -70,6 +70,21 @@
 
         <div class="box">
             <h3>2. Gán xương cho vai trò</h3>
+            <div class="ctrl-row" style="margin-bottom:6px;">
+                <label>🎯 Gán khi bấm vào mô hình:</label>
+                <select id="target-role" onchange="targetRole=this.value">
+                    <option value="">(chỉ chọn, chưa gán)</option>
+                    <option value="root">Root / Hips</option>
+                    <option value="spine">Spine</option>
+                    <option value="chest">Chest</option>
+                    <option value="head">Head</option>
+                    <option value="arm_l">Arm trái</option>
+                    <option value="arm_r">Arm phải</option>
+                    <option value="leg_l">Chân trái</option>
+                    <option value="leg_r">Chân phải</option>
+                </select>
+            </div>
+            <div id="picked-info" class="hint" style="margin-bottom:6px;">Chọn vai trò ở trên rồi <b>bấm vào mô hình</b> — xương gần nhất sẽ được gán. Không chọn vai trò thì chỉ đánh dấu.</div>
             <div id="role-list"></div>
             <div class="btn-row" style="margin-top:6px;">
                 <button onclick="autoGuess()">✨ Đoán tự động</button>
@@ -149,6 +164,19 @@
         let camDist = 4.5;
         let dragging = false;
         let lastX = 0;
+        let lastY = 0;
+        let moved = 0;
+        let targetRole = '';        // vai trò đích khi bấm vào mô hình
+        let pickedBone = null;      // xương đang chọn
+        let hoveredBone = null;
+        let instanceBones = {};     // name -> Bone trong bản clone đang hiển thị
+        let raycaster = new THREE.Raycaster();
+        let pointer = new THREE.Vector2();
+        let markerGroup = null;
+        let boneMarkers = {};       // name -> marker mesh
+        const markerGeo = new THREE.SphereGeometry(0.055, 16, 16);
+        const matAssigned = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.9 });
+        const matPicked = new THREE.MeshBasicMaterial({ color: 0x00cfff });
 
         // ==========================================
         // THREE SETUP
@@ -191,16 +219,27 @@
 
             charGroup = new THREE.Group();
             scene.add(charGroup);
+            markerGroup = new THREE.Group();
+            scene.add(markerGroup);
 
             clock = new THREE.Clock();
 
             const cv = renderer.domElement;
-            cv.addEventListener('pointerdown', e => { dragging = true; lastX = e.clientX; });
-            window.addEventListener('pointerup', () => dragging = false);
+            cv.addEventListener('pointerdown', e => { dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY; });
+            window.addEventListener('pointerup', e => {
+                if (dragging && moved < 6) clickPick(e);
+                dragging = false;
+            });
             window.addEventListener('pointermove', e => {
-                if (!dragging) return;
-                yaw += (e.clientX - lastX) * 0.01;
-                lastX = e.clientX;
+                if (dragging) {
+                    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+                    moved += Math.abs(dx) + Math.abs(dy);
+                    yaw += dx * 0.01;
+                    lastX = e.clientX;
+                    lastY = e.clientY;
+                    return;
+                }
+                hoverPick(e);
             });
             cv.addEventListener('wheel', e => {
                 e.preventDefault();
@@ -222,6 +261,7 @@
                 } else if (modelInstance) {
                     modelInstance.position.y = 0.02 * Math.abs(Math.sin(clock.elapsedTime * 2));
                 }
+                updateMarkers();
             }
             camera.position.set(Math.sin(yaw * 0) * camDist, 1.5, camDist);
             camera.position.x = Math.sin(yaw) * camDist;
@@ -282,6 +322,8 @@
             clearChar();
             modelInstance = THREE.SkeletonUtils.clone(modelScene);
             modelInstance.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+            instanceBones = {};
+            modelInstance.traverse(o => { if (o.isBone) instanceBones[o.name] = o; });
             fitToFloor(modelInstance, 1.6);
             charGroup.add(modelInstance);
             mixer = new THREE.AnimationMixer(modelInstance);
@@ -301,6 +343,9 @@
 
         function clearChar() {
             if (mixer) { try { mixer.stopAllAction(); } catch {} }
+            pickedBone = null;
+            hoveredBone = null;
+            Object.keys(boneMarkers).forEach(n => { boneMarkers[n].visible = false; });
             while (charGroup.children.length) {
                 const c = charGroup.children[0];
                 charGroup.remove(c);
@@ -362,7 +407,9 @@
         function setRole(key, boneName) {
             if (boneName) boneMap[key] = boneName;
             else delete boneMap[key];
+            updateSelects();
             updateMarks();
+            renderTree();
             updateFit();
             refreshActiveClip();
         }
@@ -440,10 +487,7 @@
             });
 
             // Đồng bộ lại dropdown
-            ROLES.forEach(r => {
-                const sel = document.querySelector(`#role-list select[onchange="setRole('${r.key}', this.value)"]`);
-                if (sel) sel.value = boneMap[r.key] || '';
-            });
+            updateSelects();
             updateMarks();
             updateFit();
             refreshActiveClip();
@@ -452,13 +496,116 @@
 
         function clearMapping() {
             boneMap = {};
-            ROLES.forEach(r => {
-                const sel = document.querySelector(`#role-list select[onchange="setRole('${r.key}', this.value)"]`);
-                if (sel) sel.value = '';
-            });
+            updateSelects();
             updateMarks();
             updateFit();
             refreshActiveClip();
+        }
+
+        // ==========================================
+        // CHỌN XƯƠNG BẰNG BẤM TRÊN MÔ HÌNH
+        // ==========================================
+        function updateSelects() {
+            ROLES.forEach(r => {
+                const sel = document.querySelector(`#role-list select[onchange="setRole('${r.key}', this.value)"]`);
+                if (sel) sel.value = boneMap[r.key] || '';
+            });
+        }
+
+        function pickBoneAt(e) {
+            if (!modelInstance) return null;
+            const cv = renderer.domElement;
+            const rect = cv.getBoundingClientRect();
+            pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+            const hits = raycaster.intersectObject(modelInstance, true);
+            if (!hits.length) return null;
+            charGroup.updateMatrixWorld(true);
+            const hit = hits[0].point;
+            let best = null, bestD = Infinity;
+            modelBones.forEach(b => {
+                const obj = instanceBones[b.name];
+                if (!obj) return;
+                const wp = obj.getWorldPosition(new THREE.Vector3());
+                const d = wp.distanceTo(hit);
+                if (d < bestD) { bestD = d; best = b.name; }
+            });
+            return bestD > 1.2 ? null : best;
+        }
+
+        function clickPick(e) {
+            const b = pickBoneAt(e);
+            if (!b) { pickedBone = null; showPickedInfo(null); return; }
+            pickedBone = b;
+            if (targetRole) {
+                setRole(targetRole, b);
+                showPickedInfo(b, targetRole);
+            } else {
+                showPickedInfo(b);
+            }
+        }
+
+        function hoverPick(e) {
+            if (e.target !== renderer.domElement) return;
+            const b = pickBoneAt(e);
+            renderer.domElement.style.cursor = b ? 'pointer' : 'default';
+            if (b && b !== hoveredBone) { hoveredBone = b; showPickedInfo(b, null, true); }
+        }
+
+        function showPickedInfo(boneName, roleKey, hover) {
+            const el = document.getElementById('picked-info');
+            if (!el) return;
+            if (!boneName) {
+                el.innerHTML = 'Chọn vai trò ở trên rồi <b>bấm vào mô hình</b> — xương gần nhất sẽ được gán. Không chọn vai trò thì chỉ đánh dấu.';
+                el.style.color = '';
+                return;
+            }
+            let txt = (hover ? 'Hover: xương ' : 'Đã chọn: xương ') + '<b>' + esc(boneName) + '</b>';
+            if (roleKey) {
+                const r = ROLES.find(x => x.key === roleKey);
+                txt += ' → gán cho <b>' + (r ? r.label : roleKey) + '</b> ✓';
+                el.style.color = '#00ff88';
+            } else {
+                el.style.color = '';
+            }
+            el.innerHTML = txt;
+        }
+
+        function ensureMarker(name) {
+            let m = boneMarkers[name];
+            if (!m) {
+                m = new THREE.Mesh(markerGeo, matAssigned);
+                m.visible = false;
+                markerGroup.add(m);
+                boneMarkers[name] = m;
+            }
+            return m;
+        }
+
+        function updateMarkers() {
+            if (!modelInstance) return;
+            charGroup.updateMatrixWorld(true);
+            const roleOf = {};
+            Object.keys(boneMap).forEach(k => { roleOf[boneMap[k]] = k; });
+            const active = new Set();
+            Object.keys(roleOf).forEach(n => {
+                const obj = instanceBones[n];
+                if (!obj) return;
+                const m = ensureMarker(n);
+                m.position.copy(obj.getWorldPosition(new THREE.Vector3()));
+                m.material = matAssigned;
+                m.visible = true;
+                active.add(n);
+            });
+            if (pickedBone && instanceBones[pickedBone]) {
+                const m = ensureMarker(pickedBone);
+                m.position.copy(instanceBones[pickedBone].getWorldPosition(new THREE.Vector3()));
+                m.material = matPicked;
+                m.visible = true;
+                active.add(pickedBone);
+            }
+            Object.keys(boneMarkers).forEach(n => { if (!active.has(n)) boneMarkers[n].visible = false; });
         }
 
         // ==========================================
