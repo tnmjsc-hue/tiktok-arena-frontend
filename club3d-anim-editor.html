@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Club 3D — Tạo Động Tác (Keyframe Editor)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.149.0/three.min.js"></script>
+    <script src="vendor/three/GLTFLoader.js"></script>
+    <script src="vendor/three/SkeletonUtils.js"></script>
+    <script src="vendor/three/GLTFExporter.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #08080c; color: #e8e8f0; display: flex; height: 100vh; overflow: hidden; }
+        #left { flex: 1; position: relative; background: #0b0710; }
+        #viewer { position: absolute; inset: 0; }
+        #viewer canvas { display: block; }
+        #viewer-hint { position: absolute; left: 12px; bottom: 10px; font-size: 11px; color: #888; background: #0009; padding: 4px 8px; border-radius: 6px; pointer-events: none; }
+        #right { width: 430px; background: #12121a; border-left: 2px solid #22222e; padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+        h2 { color: #00ff88; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; }
+        h3 { color: #ff4dd8; font-size: 13px; margin: 6px 0 4px; }
+        label { font-size: 12px; color: #aaa; }
+        input[type="file"] { font-size: 12px; }
+        input[type="number"] { width: 56px; background: #1e1e2a; color: #fff; border: 1px solid #333; border-radius: 5px; padding: 3px 4px; font-size: 12px; }
+        button { background: #00ff88; color: #000; border: none; border-radius: 6px; padding: 7px 10px; font-weight: bold; cursor: pointer; font-size: 12px; }
+        button:hover { background: #00cc6a; }
+        button.ghost { background: #2a2a3a; color: #fff; }
+        button.ghost:hover { background: #4a4a5a; }
+        button.active { background: #00cfff; color: #000; }
+        .box { background: #1a1a24; border: 1px solid #2a2a38; border-radius: 8px; padding: 10px; }
+        .hint { font-size: 11px; color: #888; line-height: 1.5; }
+        #status { font-size: 11px; color: #00ff88; min-height: 14px; }
+        .btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .mode-row { display: flex; gap: 8px; }
+        .mode-row button { flex: 1; }
+        .bone-row { border: 1px solid #2a2a38; border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; cursor: pointer; background: #16161f; }
+        .bone-row.sel { border-color: #00cfff; background: #16222b; }
+        .bone-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: bold; }
+        .bone-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .bone-axes { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; align-items: center; }
+        .bone-axes label { font-size: 11px; color: #9fb6ff; display: flex; align-items: center; gap: 3px; }
+        .badge { font-size: 10px; background: #00ff8833; color: #00ff88; border-radius: 4px; padding: 0 5px; margin-left: auto; }
+        .tl-wrap { position: relative; border: 1px solid #2a2a38; border-radius: 6px; padding: 4px; background: #0d0d13; }
+        #playhead { position: absolute; top: 4px; bottom: 4px; width: 2px; background: #fff; pointer-events: none; z-index: 2; }
+        .tl-row { display: flex; align-items: center; gap: 6px; height: 18px; }
+        .tl-label { width: 58px; font-size: 10px; text-align: right; flex-shrink: 0; }
+        .tl-track { position: relative; flex: 1; height: 14px; background: #101018; border-radius: 3px; cursor: pointer; }
+        .tl-tick { position: absolute; top: 1px; bottom: 1px; width: 3px; border-radius: 1px; }
+        .scrub-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+        .scrub-row input[type="range"] { flex: 1; }
+        .time-label { font-family: monospace; font-size: 12px; color: #00ff88; min-width: 62px; text-align: right; }
+        .key-row { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 5px; font-size: 12px; cursor: pointer; }
+        .key-row:hover { background: #1e1e2a; }
+        .key-row .t { font-family: monospace; color: #ffd166; min-width: 58px; }
+        .key-row .btn-x { margin-left: auto; background: none; color: #ff5555; font-size: 14px; padding: 0 6px; }
+        code { background: #000; color: #9dffd0; padding: 2px 5px; border-radius: 4px; font-size: 11px; display: block; white-space: pre-wrap; margin-top: 6px; }
+        .muted { color: #666; font-size: 11px; }
+    </style>
+</head>
+<body>
+
+    <div id="left">
+        <div id="viewer"></div>
+        <div id="viewer-hint">Chế độ Xoay camera: kéo để xoay · Lăn để zoom | Chế độ Xoay xương: bấm chọn xương, kéo để xoay</div>
+    </div>
+
+    <div id="right">
+        <h2>🎬 Club 3D — Tạo Động Tác</h2>
+        <div class="hint">Tạo động tác nhảy bằng cách tạo dáng từng xương rồi thêm keyframe theo thời gian. Xuất ra file GLB cho <b>glb3d/anims/</b> và đăng ký trong <b>CLUB3D_ASSETS.anims</b> của index.html.</div>
+        <div id="status"></div>
+
+        <div class="box">
+            <h3>Model</h3>
+            <div class="btn-row">
+                <button class="ghost" onclick="loadModelFromUrl('glb3d/dancer.glb')">🕺 Dùng dancer.glb (chuẩn)</button>
+                <label class="ghost" style="display:inline-block;padding:7px 10px;border-radius:6px;cursor:pointer;">Upload model
+                    <input type="file" id="model-upload" accept=".glb,.gltf" style="display:none;" onchange="loadModelFromFile(this.files[0])">
+                </label>
+            </div>
+            <div id="model-info" class="hint" style="margin-top:6px;">Đang tải dancer.glb...</div>
+        </div>
+
+        <div class="box">
+            <h3>Chế độ chuột</h3>
+            <div class="mode-row">
+                <button id="btn-cam" class="active" onclick="setMouseMode('camera')">🔄 Xoay camera</button>
+                <button id="btn-bone" class="ghost" onclick="setMouseMode('bone')">🦴 Xoay xương</button>
+            </div>
+            <div class="hint" style="margin-top:5px;">Xoay xương: bấm vào khớp trên mô hình để chọn, kéo trái/phải xoay quanh trục Y, kéo lên/xuống quanh trục X.</div>
+        </div>
+
+        <div class="box">
+            <h3>Bộ xương (8 xương chuẩn)</h3>
+            <div id="bone-list"></div>
+        </div>
+
+        <div class="box">
+            <h3>Timeline</h3>
+            <div class="scrub-row">
+                <label style="width:60px;">Thời lượng:</label>
+                <input type="number" id="duration" min="0.5" max="60" step="0.5" value="4" onchange="setDuration(this.value)">
+                <span class="muted">s</span>
+                <span id="time-now" class="time-label">0.000</span>
+            </div>
+            <div class="scrub-row">
+                <input type="range" id="scrub" min="0" max="400" step="0.1" value="0" oninput="scrub(parseFloat(this.value)/100*duration)">
+                <button class="ghost" onclick="jumpKeyframe(-1)">◀ K</button>
+                <button onclick="togglePlay()" id="play-btn">▶ Phát</button>
+                <button class="ghost" onclick="jumpKeyframe(1)">K ▶</button>
+                <button class="ghost" id="loop-btn" onclick="toggleLoop()">🔁 Lặp</button>
+            </div>
+            <div class="tl-wrap" style="margin-top:6px;">
+                <div id="playhead"></div>
+                <div id="timeline-view"></div>
+            </div>
+            <div class="btn-row" style="margin-top:8px;">
+                <button onclick="addKeyframe()">＋ Keyframe tại thời điểm</button>
+                <button class="ghost" onclick="deleteKeyframeAt(time)">Xóa keyframe đây</button>
+                <button class="ghost" onclick="clearAllKeyframes()">Xóa hết</button>
+            </div>
+        </div>
+
+        <div class="box">
+            <h3>Keyframe của xương đang chọn</h3>
+            <div id="key-list" class="hint">Bấm chọn 1 xương (ở mục trên hoặc trên mô hình) rồi thêm keyframe.</div>
+        </div>
+
+        <div class="box">
+            <h3>Xuất động tác</h3>
+            <div class="scrub-row">
+                <label style="width:90px;">Tên clip:</label>
+                <input type="text" id="clip-name2" value="my_dance" style="flex:1;background:#1e1e2a;color:#fff;border:1px solid #333;border-radius:5px;padding:5px;font-size:12px;">
+            </div>
+            <button onclick="exportGLB()" style="width:100%;margin-top:8px;">⬇ Xuất GLB (động tác)</button>
+            <div class="btn-row" style="margin-top:6px;">
+                <button class="ghost" onclick="saveProject()" style="flex:1;">💾 Lưu dự án</button>
+                <button class="ghost" onclick="loadProject()" style="flex:1;">📂 Nạp dự án</button>
+            </div>
+            <div id="snippet" class="hint" style="margin-top:6px;"></div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // CẤU HÌNH
+        // ==========================================
+        const PROJECT_DB = 'tiktok-arena-club3d-anim-v1';
+        const ROLES = [
+            { key: 'root',  label: 'Root',    color: '#ffd166', root: true },
+            { key: 'spine', label: 'Spine',   color: '#9fb6ff' },
+            { key: 'chest', label: 'Chest',   color: '#00ff88' },
+            { key: 'head',  label: 'Head',    color: '#ff5c73' },
+            { key: 'arm_l', label: 'Arm trái', color: '#00cfff' },
+            { key: 'arm_r', label: 'Arm phải', color: '#ff4dd8' },
+            { key: 'leg_l', label: 'Chân trái', color: '#00ff9d' },
+            { key: 'leg_r', label: 'Chân phải', color: '#ff9a3d' }
+        ];
+        const DEG = Math.PI / 180;
+        const AXIS_Y = new THREE.Vector3(0, 1, 0);
+        const AXIS_X = new THREE.Vector3(1, 0, 0);
+
+        // ==========================================
+        // STATE
+        // ==========================================
+        let loader = null;
+        let modelScene = null;
+        let modelInstance = null;
+        let instanceBones = {};
+        let boneMap = {};          // key chuẩn -> tên xương thật trên model
+        let restQ = {};
+        let restPos = {};
+        let keyframes = {};        // key -> [{t, rx,ry,rz, px,py,pz}]
+        let poses = {};            // key -> {rx,ry,rz, px,py,pz} (giá trị hiện tại, độ lệch)
+        ROLES.forEach(r => { keyframes[r.key] = []; poses[r.key] = { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 }; });
+        let duration = 4;
+        let time = 0;
+        let playing = false;
+        let loop = true;
+        let selectedKey = 'chest';
+        let mouseMode = 'camera';
+        let mixer = null;
+        let action = null;
+        let previewClip = null;
+        let yaw = 0;
+        let camDist = 4.5;
+        let dragging = false;
+        let moved = 0;
+        let lastX = 0, lastY = 0;
+        let raycaster = new THREE.Raycaster();
+        let pointer = new THREE.Vector2();
+        let markerGroup = null;
+        let markers = {};
+        const markerGeo = new THREE.SphereGeometry(0.06, 16, 16);
+        const matSel = new THREE.MeshBasicMaterial({ color: 0x00cfff });
+        const matKey = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.9 });
+
+        // ==========================================
+        // THREE SETUP
+        // ==========================================
+        let renderer, scene, camera, charGroup, clock;
+
+        function initViewer() {
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+            renderer.shadowMap.enabled = true;
+            document.getElementById('viewer').appendChild(renderer.domElement);
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b0710);
+            camera = new THREE.PerspectiveCamera(45, 1, 0.1, 60);
+
+            scene.add(new THREE.AmbientLight(0x554e6e, 0.6));
+            const key = new THREE.DirectionalLight(0xfff0ff, 0.9);
+            key.position.set(3, 6, 4);
+            key.castShadow = true;
+            key.shadow.mapSize.set(1024, 1024);
+            scene.add(key);
+            const rim = new THREE.PointLight(0xff4dd8, 15, 14);
+            rim.position.set(-2, 3, 2);
+            scene.add(rim);
+            const rim2 = new THREE.PointLight(0x00cfff, 15, 14);
+            rim2.position.set(2, 2, -2);
+            scene.add(rim2);
+
+            const grid = new THREE.GridHelper(6, 16, 0x00ff8855, 0x222233);
+            scene.add(grid);
+            const floor = new THREE.Mesh(
+                new THREE.CircleGeometry(4, 48),
+                new THREE.MeshStandardMaterial({ color: 0x15121e, roughness: 0.9 })
+            );
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            charGroup = new THREE.Group();
+            scene.add(charGroup);
+            markerGroup = new THREE.Group();
+            scene.add(markerGroup);
+
+            clock = new THREE.Clock();
+
+            const cv = renderer.domElement;
+            cv.addEventListener('pointerdown', e => {
+                dragging = true;
+                moved = 0;
+                lastX = e.clientX;
+                lastY = e.clientY;
+                if (mouseMode === 'bone') clickPick(e);
+            });
+            window.addEventListener('pointerup', () => dragging = false);
+            window.addEventListener('pointermove', e => {
+                if (!dragging) return;
+                const dx = e.clientX - lastX, dy = e.clientY - lastY;
+                moved += Math.abs(dx) + Math.abs(dy);
+                lastX = e.clientX;
+                lastY = e.clientY;
+                if (mouseMode === 'camera') {
+                    yaw += dx * 0.01;
+                } else {
+                    dragPose(dx, dy);
+                }
+            });
+            cv.addEventListener('wheel', e => {
+                e.preventDefault();
+                camDist = Math.min(12, Math.max(2, camDist * (e.deltaY > 0 ? 1.1 : 0.9)));
+            }, { passive: false });
+
+            animate();
+            window.addEventListener('resize', resize);
+            resize();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = Math.min(clock.getDelta(), 0.05);
+            if (modelInstance) {
+                charGroup.rotation.y = yaw;
+                if (mixer) {
+                    mixer.update(playing ? dt : 0);
+                    if (playing && action) {
+                        time = action.time;
+                        if (!loop && time >= duration) { time = duration; playing = false; syncPlayBtn(); }
+                    }
+                } else if (modelInstance) {
+                    modelInstance.position.y = 0.02 * Math.abs(Math.sin(clock.elapsedTime * 2));
+                }
+                updatePlayhead();
+                updateMarkers();
+            }
+            camera.position.set(Math.sin(yaw) * camDist, 1.5, camDist);
+            camera.position.x = Math.sin(yaw) * camDist;
+            camera.position.z = Math.cos(yaw) * camDist;
+            camera.lookAt(0, 0.9, 0);
+            renderer.render(scene, camera);
+        }
+
+        function resize() {
+            const el = document.getElementById('left');
+            const w = el.clientWidth, h = el.clientHeight;
+            renderer.setSize(w, h);
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+        }
+
+        function log(msg) { document.getElementById('status').textContent = '> ' + msg; }
+
+        // ==========================================
+        // LOAD MODEL
+        // ==========================================
+        function loadModelFromUrl(url) {
+            if (!loader) loader = new THREE.GLTFLoader();
+            log('Đang tải ' + url + '...');
+            loader.load(url, gltf => {
+                setModel(gltf, url);
+            }, undefined, err => {
+                log('Không tải được ' + url + ' (' + err.message + '). Bấm Upload model.');
+                document.getElementById('model-info').textContent = 'Lỗi tải dancer.glb — dùng nút Upload model.';
+            });
+        }
+
+        function loadModelFromFile(file) {
+            if (!file) return;
+            if (!/\.(glb|gltf)$/i.test(file.name)) { log('Chọn file .glb hoặc .gltf!'); return; }
+            if (!loader) loader = new THREE.GLTFLoader();
+            const url = URL.createObjectURL(file);
+            loader.load(url, gltf => {
+                URL.revokeObjectURL(url);
+                setModel(gltf, file.name);
+            }, undefined, err => {
+                URL.revokeObjectURL(url);
+                log('Không đọc được model: ' + err.message);
+            });
+        }
+
+        function setModel(gltf, src) {
+            modelScene = gltf.scene;
+            clearChar();
+            modelInstance = THREE.SkeletonUtils.clone(modelScene);
+            modelInstance.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+            instanceBones = {};
+            modelInstance.traverse(o => { if (o.isBone) instanceBones[o.name] = o; });
+            fitToFloor(modelInstance, 1.6);
+            charGroup.add(modelInstance);
+            mixer = new THREE.AnimationMixer(modelInstance);
+
+            boneMap = {};
+            const names = Object.keys(instanceBones);
+            names.forEach(n => { if (ROLES.some(r => r.key === n)) boneMap[n] = n; });
+            const auto = autoMapBones(names);
+            Object.keys(auto).forEach(k => { if (!boneMap[k]) boneMap[k] = auto[k]; });
+
+            restQ = {}; restPos = {};
+            ROLES.forEach(r => {
+                const bn = boneMap[r.key];
+                if (bn && instanceBones[bn]) {
+                    restQ[bn] = instanceBones[bn].quaternion.clone();
+                    restPos[bn] = instanceBones[bn].position.clone();
+                }
+            });
+
+            const info = document.getElementById('model-info');
+            info.textContent = 'Model: ' + src + ' — ' + names.length + ' xương. Map tự động: ' +
+                ROLES.map(r => r.key + '→' + (boneMap[r.key] || '?')).join(', ');
+            applyAllPoses();
+            rebuildPreview();
+            renderBoneList();
+            renderTimelineTicks();
+            renderKeyList();
+            updateTimeUI();
+            log('Đã nạp ' + src + '. Tạo dáng → thêm keyframe → xuất GLB.');
+        }
+
+        function fitToFloor(obj, targetH) {
+            const box = new THREE.Box3().setFromObject(obj);
+            const size = box.getSize(new THREE.Vector3());
+            const s = (targetH || 1.6) / Math.max(0.001, size.y || 1);
+            obj.scale.setScalar(s);
+            const b2 = new THREE.Box3().setFromObject(obj);
+            obj.position.y -= b2.min.y;
+            obj.position.x = 0;
+            obj.position.z = 0;
+        }
+
+        function clearChar() {
+            if (mixer) { try { mixer.stopAllAction(); } catch {} }
+            while (charGroup.children.length) {
+                const c = charGroup.children[0];
+                charGroup.remove(c);
+                if (c.traverse) c.traverse(o => {
+                    if (o.isMesh) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }
+                });
+            }
+            mixer = null;
+            action = null;
+            previewClip = null;
+        }
+
+        // ==========================================
+        // BONE MAP (tự đoán cho model lạ)
+        // ==========================================
+        function autoMapBones(names) {
+            const used = new Set();
+            const norm = n => String(n).toLowerCase().replace(/mixamorig[:_]/g, '').replace(/[^a-z0-9]/g, '');
+            const isL = n => /^l[a-z]/.test(n.toLowerCase()) || n.toLowerCase().indexOf('left') >= 0 || /[._-]l$/.test(n.toLowerCase());
+            const isR = n => /^r[a-z]/.test(n.toLowerCase()) || n.toLowerCase().indexOf('right') >= 0 || /[._-]r$/.test(n.toLowerCase());
+            const aliases = {
+                root: ['root', 'hips', 'pelvis', 'mixamorig:hips', 'bip001', 'bip001 pelvis'],
+                spine: ['spine', 'spine1', 'torso', 'mixamorig:spine', 'bip001 spine'],
+                chest: ['chest', 'upperchest', 'spine1', 'spine2', 'mixamorig:spine1', 'mixamorig:spine2', 'bip001 spine1', 'torso'],
+                head: ['head', 'neck1', 'mixamorig:head', 'bip001 head'],
+                arm_l: ['arm_l', 'leftarm', 'upperarm_l', 'leftupperarm', 'shoulder_l', 'upperarm_left', 'mixamorig:leftarm', 'mixamorig:leftupperarm', 'bip001 l upperarm', 'leftshoulder'],
+                arm_r: ['arm_r', 'rightarm', 'upperarm_r', 'rightupperarm', 'shoulder_r', 'upperarm_right', 'mixamorig:rightarm', 'mixamorig:rightupperarm', 'bip001 r upperarm', 'rightshoulder'],
+                leg_l: ['leg_l', 'leftupleg', 'leftleg', 'thigh_l', 'leftthigh', 'leftupperleg', 'upleg_l', 'mixamorig:leftupleg', 'bip001 l thigh'],
+                leg_r: ['leg_r', 'rightupleg', 'rightleg', 'thigh_r', 'rightthigh', 'rightupperleg', 'upleg_r', 'mixamorig:rightupleg', 'bip001 r thigh']
+            };
+            const out = {};
+            const find = (list, sideFilter) => names.find(n => {
+                if (used.has(n)) return false;
+                if (!list.some(a => norm(a) === norm(n))) return false;
+                if (sideFilter && !sideFilter(n)) return false;
+                return true;
+            });
+            const priority = ['root', 'chest', 'arm_l', 'arm_r', 'leg_l', 'leg_r', 'spine', 'head'];
+            priority.forEach(k => {
+                const sideFilter = k === 'arm_l' || k === 'leg_l' ? isL : (k === 'arm_r' || k === 'leg_r' ? isR : null);
+                const b = find(aliases[k], sideFilter);
+                if (b) { out[k] = b; used.add(b); }
+            });
+            ['arm', 'leg'].forEach(part => {
+                [['_l', isL], ['_r', isR]].forEach(([suf, sf]) => {
+                    const k = part + suf;
+                    if (out[k]) return;
+                    const b = names.find(n => {
+                        if (used.has(n)) return false;
+                        if (new RegExp(part, 'i').test(n) && !/end/i.test(n) && sf(n)) return true;
+                        return false;
+                    });
+                    if (b) { out[k] = b; used.add(b); }
+                });
+            });
+            return out;
+        }
+
+        // ==========================================
+        // POSE — áp dụng dáng lên mô hình
+        // ==========================================
+        function poseOf(key) { return poses[key] || { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 }; }
+
+        function applyPose(key) {
+            const bn = boneMap[key];
+            const bone = bn && instanceBones[bn];
+            if (!bone) return;
+            const p = poseOf(key);
+            const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(p.rx * DEG, p.ry * DEG, p.rz * DEG, 'XYZ'));
+            bone.quaternion.copy(q);
+            if (ROLES.find(r => r.key === key).root) {
+                const rp = restPos[bn] || new THREE.Vector3();
+                bone.position.set(rp.x + p.px, rp.y + p.py, rp.z + p.pz);
+            }
+        }
+
+        function applyAllPoses() { ROLES.forEach(r => applyPose(r.key)); }
+
+        function selectBone(key) {
+            selectedKey = key;
+            renderBoneList();
+            renderKeyList();
+            log('Đang chỉnh xương: ' + (ROLES.find(r => r.key === key).label) + ' (' + (boneMap[key] || '?') + ')');
+        }
+
+        function resetPose(key) {
+            poses[key] = { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 };
+            applyPose(key);
+            syncPoseInputs(key);
+        }
+
+        function setAxis(key, axis, val) {
+            const p = poseOf(key);
+            p[axis] = Math.round((Number(val) || 0) * 10) / 10;
+            applyPose(key);
+            document.getElementById('axis-' + key + '-' + axis).value = p[axis];
+        }
+
+        function syncPoseInputs(key) {
+            const p = poseOf(key);
+            ['rx', 'ry', 'rz', 'px', 'py', 'pz'].forEach(a => {
+                const el = document.getElementById('axis-' + key + '-' + a);
+                if (el) el.value = p[a];
+            });
+        }
+
+        function renderBoneList() {
+            const box = document.getElementById('bone-list');
+            if (!modelInstance) { box.innerHTML = '<div class="hint">Chưa có model.</div>'; return; }
+            box.innerHTML = ROLES.map(r => {
+                const p = poseOf(r.key);
+                const mapped = boneMap[r.key] ? ' → ' + boneMap[r.key] : ' (thiếu)';
+                const sel = selectedKey === r.key ? ' bone-row sel' : ' bone-row';
+                const axes = ['rx', 'ry', 'rz'].map(a => `<label>${a.toUpperCase()}<input id="axis-${r.key}-${a}" type="number" step="1" value="${p[a]}" oninput="setAxis('${r.key}','${a}',this.value)"></label>`).join('');
+                const pos = r.root ? ['px', 'py', 'pz'].map(a => `<label>${a.toUpperCase()}<input id="axis-${r.key}-${a}" type="number" step="0.02" value="${p[a]}" oninput="setAxis('${r.key}','${a}',this.value)"></label>`).join('') : '';
+                return `<div class="${sel}" onclick="selectBone('${r.key}')">
+                    <div class="bone-head"><span class="bone-dot" style="background:${r.color}"></span>${r.label}<span class="muted">${mapped}</span><span class="badge">${keyframes[r.key].length}K</span></div>
+                    <div class="bone-axes" onclick="event.stopPropagation()">${axes}${pos}<button class="ghost" onclick="resetPose('${r.key}')" title="Đặt lại 0">↺</button></div>
+                </div>`;
+            }).join('');
+        }
+
+        // ==========================================
+        // CHỌN & KÉO XƯƠNG TRÊN MÔ HÌNH
+        // ==========================================
+        function pickBoneAt(e) {
+            if (!modelInstance) return null;
+            const cv = renderer.domElement;
+            const rect = cv.getBoundingClientRect();
+            pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+            const hits = raycaster.intersectObject(modelInstance, true);
+            if (!hits.length) return null;
+            charGroup.updateMatrixWorld(true);
+            const hit = hits[0].point;
+            let best = null, bestD = Infinity;
+            Object.keys(instanceBones).forEach(n => {
+                const wp = instanceBones[n].getWorldPosition(new THREE.Vector3());
+                const d = wp.distanceTo(hit);
+                if (d < bestD) { bestD = d; best = n; }
+            });
+            if (bestD > 1.2) return null;
+            const key = ROLES.find(r => boneMap[r.key] === best);
+            return key ? key.key : null;
+        }
+
+        function clickPick(e) {
+            const key = pickBoneAt(e);
+            if (key) { selectBone(key); }
+        }
+
+        function dragPose(dx, dy) {
+            if (!selectedKey || !boneMap[selectedKey]) return;
+            if (playing) { playing = false; syncPlayBtn(); if (action) action.paused = true; }
+            const k = 0.008;
+            const qy = new THREE.Quaternion().setFromAxisAngle(AXIS_Y, dx * k);
+            const qx = new THREE.Quaternion().setFromAxisAngle(AXIS_X, dy * k);
+            const cur = new THREE.Quaternion().setFromEuler(new THREE.Euler(poseOf(selectedKey).rx * DEG, poseOf(selectedKey).ry * DEG, poseOf(selectedKey).rz * DEG, 'XYZ'));
+            cur.premultiply(qy).premultiply(qx);
+            const e = new THREE.Euler().setFromQuaternion(cur, 'XYZ');
+            const p = poseOf(selectedKey);
+            p.rx = Math.round(e.x / DEG * 10) / 10;
+            p.ry = Math.round(e.y / DEG * 10) / 10;
+            p.rz = Math.round(e.z / DEG * 10) / 10;
+            applyPose(selectedKey);
+            syncPoseInputs(selectedKey);
+        }
+
+        function setMouseMode(m) {
+            mouseMode = m;
+            document.getElementById('btn-cam').className = m === 'camera' ? 'active' : 'ghost';
+            document.getElementById('btn-bone').className = m === 'bone' ? 'active' : 'ghost';
+        }
+
+        function updateMarkers() {
+            if (!modelInstance) return;
+            charGroup.updateMatrixWorld(true);
+            const roles = {};
+            ROLES.forEach(r => { if (boneMap[r.key]) roles[r.key] = boneMap[r.key]; });
+            const active = new Set();
+            ROLES.forEach(r => {
+                const bn = roles[r.key];
+                if (!bn || !instanceBones[bn]) return;
+                const hasKey = keyframes[r.key].length > 0;
+                if (!hasKey && selectedKey !== r.key) return;
+                const m = ensureMarker(r.key);
+                m.position.copy(instanceBones[bn].getWorldPosition(new THREE.Vector3()));
+                m.material = selectedKey === r.key ? matSel : matKey;
+                m.visible = true;
+                active.add(r.key);
+            });
+            Object.keys(markers).forEach(n => { if (!active.has(n)) markers[n].visible = false; });
+        }
+
+        function ensureMarker(name) {
+            let m = markers[name];
+            if (!m) {
+                m = new THREE.Mesh(markerGeo, matSel);
+                m.visible = false;
+                markerGroup.add(m);
+                markers[name] = m;
+            }
+            return m;
+        }
+
+        // ==========================================
+        // TIMELINE
+        // ==========================================
+        function updateTimeUI() {
+            document.getElementById('time-now').textContent = time.toFixed(3);
+            const el = document.getElementById('scrub');
+            el.value = duration ? String(Math.min(100, (time / duration) * 100)) : '0';
+        }
+
+        function updatePlayhead() {
+            const ph = document.getElementById('playhead');
+            const norm = loop ? time % duration : Math.min(time, duration);
+            ph.style.left = (duration ? (norm / duration) * 100 : 0) + '%';
+            updateTimeUI();
+        }
+
+        function scrub(t) {
+            time = Math.max(0, Math.min(duration, t));
+            if (action) { action.paused = true; action.time = time; mixer.update(0); }
+            updatePlayhead();
+            renderKeyList();
+        }
+
+        function setDuration(v) {
+            duration = Math.max(0.5, Math.min(60, Number(v) || 4));
+            document.getElementById('duration').value = duration;
+            time = Math.min(time, duration);
+            renderTimelineTicks();
+            rebuildPreview();
+            updatePlayhead();
+            renderKeyList();
+        }
+
+        function togglePlay() {
+            if (!modelInstance) return;
+            playing = !playing;
+            if (action) {
+                action.paused = !playing;
+                if (playing) action.time = loop ? time % duration : Math.min(time, duration);
+            }
+            syncPlayBtn();
+        }
+
+        function syncPlayBtn() {
+            document.getElementById('play-btn').textContent = playing ? '⏸ Tạm dừng' : '▶ Phát';
+        }
+
+        function toggleLoop() {
+            loop = !loop;
+            document.getElementById('loop-btn').textContent = loop ? '🔁 Lặp' : '➡ Một lần';
+            rebuildPreview();
+        }
+
+        function renderTimelineTicks() {
+            const box = document.getElementById('timeline-view');
+            if (!modelInstance) { box.innerHTML = '<div class="hint">Chưa có model.</div>'; return; }
+            box.innerHTML = ROLES.map(r => {
+                const ticks = keyframes[r.key].map(k =>
+                    `<div class="tl-tick" style="left:${(k.t / duration) * 100}%;background:${r.color}" title="${r.label} @ ${k.t}s"></div>`
+                ).join('');
+                return `<div class="tl-row"><span class="tl-label" style="color:${r.color}">${r.label}</span>
+                    <div class="tl-track" onclick="tlJump('${r.key}', event)">${ticks}</div></div>`;
+            }).join('');
+        }
+
+        function tlJump(key, e) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const t = ((e.clientX - rect.left) / rect.width) * duration;
+            scrub(Math.max(0, Math.min(duration, t)));
+        }
+
+        // ==========================================
+        // KEYFRAMES
+        // ==========================================
+        function roundT(t) { return Math.round(t * 1000) / 1000; }
+
+        function addKeyframe() {
+            if (!modelInstance) return;
+            const p = poseOf(selectedKey);
+            const t = roundT(loop ? time % duration : Math.min(time, duration));
+            const rec = { t, rx: p.rx, ry: p.ry, rz: p.rz, px: p.px, py: p.py, pz: p.pz };
+            const ks = keyframes[selectedKey];
+            const ex = ks.find(k => Math.abs(k.t - t) < 0.001);
+            if (ex) Object.assign(ex, rec);
+            else { ks.push(rec); ks.sort((a, b) => a.t - b.t); }
+            rebuildPreview();
+            renderBoneList();
+            renderKeyList();
+            renderTimelineTicks();
+            log('Keyframe ' + selectedKey + ' @ ' + t + 's (' + ks.length + ' key).');
+        }
+
+        function deleteKeyframeAt(t) {
+            const ks = keyframes[selectedKey];
+            const i = ks.findIndex(k => Math.abs(k.t - roundT(t)) < 0.002);
+            if (i >= 0) { ks.splice(i, 1); rebuildPreview(); renderBoneList(); renderKeyList(); renderTimelineTicks(); log('Đã xóa keyframe @ ' + roundT(t) + 's.'); }
+        }
+
+        function clearAllKeyframes() {
+            if (!Object.keys(keyframes).some(k => keyframes[k].length)) { log('Chưa có keyframe nào.'); return; }
+            ROLES.forEach(r => keyframes[r.key] = []);
+            rebuildPreview();
+            renderBoneList();
+            renderKeyList();
+            renderTimelineTicks();
+            log('Đã xóa toàn bộ keyframe.');
+        }
+
+        function renderKeyList() {
+            const box = document.getElementById('key-list');
+            const ks = keyframes[selectedKey];
+            const r = ROLES.find(x => x.key === selectedKey);
+            if (!ks.length) { box.innerHTML = '<div class="hint">Xương <b>' + r.label + '</b> chưa có keyframe. Bấm "＋ Keyframe tại thời điểm" để lưu dáng hiện tại.</div>'; return; }
+            box.innerHTML = ks.map((k, i) => {
+                const near = Math.abs(k.t - roundT(loop ? time % duration : time)) < 0.002;
+                return `<div class="key-row" style="${near ? 'background:#1e2a22;border:1px solid #00ff8844;' : ''}" onclick="scrub(${k.t})">
+                    <span class="t">${k.t.toFixed(3)}s</span><span class="muted">Rx${k.rx} Ry${k.ry} Rz${k.rz}${r.root ? ' · Px' + k.px + ' Py' + k.py + ' Pz' + k.pz : ''}</span>
+                    <button class="btn-x" onclick="event.stopPropagation();deleteKeyframeAt(${k.t})">✕</button></div>`;
+            }).join('');
+        }
+
+        function jumpKeyframe(dir) {
+            const all = [];
+            ROLES.forEach(r => keyframes[r.key].forEach(k => all.push(k.t)));
+            if (!all.length) return;
+            all.sort((a, b) => a - b);
+            const cur = roundT(loop ? time % duration : Math.min(time, duration));
+            if (dir > 0) {
+                const nxt = all.find(t => t > cur + 0.001);
+                if (nxt != null) scrub(nxt);
+            } else {
+                const prev = all.filter(t => t < cur - 0.001).pop();
+                if (prev != null) scrub(prev); else scrub(0);
+            }
+        }
+
+        // ==========================================
+        // BUILD CLIP + PREVIEW
+        // ==========================================
+        function buildClip() {
+            const tracks = [];
+            ROLES.forEach(r => {
+                const ks = keyframes[r.key];
+                if (!ks.length) return;
+                const times = ks.map(k => k.t);
+                const qv = [];
+                ks.forEach(k => {
+                    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(k.rx * DEG, k.ry * DEG, k.rz * DEG, 'XYZ'));
+                    qv.push(q.x, q.y, q.z, q.w);
+                });
+                tracks.push(new THREE.QuaternionKeyframeTrack(r.key + '.quaternion', times, qv));
+                if (r.root) {
+                    const bn = boneMap[r.key];
+                    const rp = (bn && restPos[bn]) || new THREE.Vector3();
+                    const pv = [];
+                    ks.forEach(k => pv.push(rp.x + k.px, rp.y + k.py, rp.z + k.pz));
+                    tracks.push(new THREE.VectorKeyframeTrack(r.key + '.position', times, pv));
+                }
+            });
+            let maxT = 0.2;
+            ROLES.forEach(r => keyframes[r.key].forEach(k => { if (k.t > maxT) maxT = k.t; }));
+            return new THREE.AnimationClip('club3d_anim', maxT, tracks);
+        }
+
+        function rebuildPreview() {
+            if (!modelInstance || !mixer) return;
+            previewClip = buildClip();
+            try { mixer.stopAllAction(); } catch {}
+            action = mixer.clipAction(previewClip, modelInstance);
+            action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce);
+            action.enabled = true;
+            action.reset();
+            action.play();
+            action.paused = !playing;
+            action.time = loop ? time % duration : Math.min(time, duration);
+            mixer.update(0);
+            updatePlayhead();
+        }
+
+        // ==========================================
+        // EXPORT GLB
+        // ==========================================
+        function exportGLB() {
+            if (!modelInstance) { log('Chưa có model.'); return; }
+            const total = ROLES.reduce((n, r) => n + keyframes[r.key].length, 0);
+            if (!total) { log('Chưa có keyframe nào — thêm ít nhất 1 keyframe rồi xuất.'); return; }
+            const name = (document.getElementById('clip-name2').value || 'my_dance').replace(/[^a-zA-Z0-9_-]/g, '') || 'my_dance';
+            const clip = buildClip();
+            const root = new THREE.Group();
+            root.animations = [clip];
+            ROLES.forEach(r => {
+                if (keyframes[r.key].length) { const o = new THREE.Object3D(); o.name = r.key; root.add(o); }
+            });
+            if (typeof THREE.GLTFExporter !== 'function') { log('Thiếu GLTFExporter.js (vendor/three).'); return; }
+            const exporter = new THREE.GLTFExporter();
+            exporter.parse(root, buf => {
+                const blob = new Blob([buf], { type: 'model/gltf-binary' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = name + '.glb';
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+                document.getElementById('snippet').innerHTML =
+                    'Đã xuất <b>' + name + '.glb</b> (' + total + ' keyframe). Bỏ file vào <b>glb3d/anims/</b> rồi đăng ký trong index.html:<br><code>CLUB3D_ASSETS.anims.push(\'glb3d/anims/' + name + '.glb\');</code>';
+                log('Đã xuất ' + name + '.glb');
+            }, err => {
+                log('Lỗi xuất GLB: ' + err.message);
+            }, { binary: true, animations: [clip] });
+        }
+
+        // ==========================================
+        // SAVE / LOAD DỰ ÁN (localStorage)
+        // ==========================================
+        function saveProject() {
+            try {
+                const data = {
+                    duration,
+                    name: document.getElementById('clip-name2').value,
+                    keyframes: ROLES.reduce((o, r) => { o[r.key] = keyframes[r.key]; return o; }, {})
+                };
+                localStorage.setItem(PROJECT_DB, JSON.stringify(data));
+                log('Đã lưu dự án vào trình duyệt.');
+            } catch (err) { log('Lỗi lưu: ' + err.message); }
+        }
+
+        function loadProject() {
+            try {
+                const raw = localStorage.getItem(PROJECT_DB);
+                if (!raw) { log('Chưa có dự án đã lưu.'); return; }
+                const d = JSON.parse(raw);
+                if (d.duration) { duration = d.duration; document.getElementById('duration').value = duration; }
+                if (d.name) document.getElementById('clip-name2').value = d.name;
+                ROLES.forEach(r => { keyframes[r.key] = (d.keyframes && d.keyframes[r.key] || []).slice().sort((a, b) => a.t - b.t); });
+                rebuildPreview();
+                renderBoneList();
+                renderKeyList();
+                renderTimelineTicks();
+                updatePlayhead();
+                log('Đã nạp dự án đã lưu (' + ROLES.reduce((n, r) => n + keyframes[r.key].length, 0) + ' keyframe).');
+            } catch (err) { log('Lỗi nạp dự án: ' + err.message); }
+        }
+
+        // ==========================================
+        // HELPERS + BOOT
+        // ==========================================
+        function esc(s) {
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        initViewer();
+        setMouseMode('camera');
+        syncPlayBtn();
+        renderBoneList();
+        renderTimelineTicks();
+        loadModelFromUrl('glb3d/dancer.glb');
+    </script>
+</body>
+</html>
